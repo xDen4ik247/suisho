@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Suisho
+GenericName=Math workbench
+Comment=Exact calculator with step-by-step solutions, matrices, analytic geometry and a grapher
+Exec=suisho
+Icon=suisho
+Terminal=false
+Categories=Education;Math;Science;Utility;
+Keywords=suisho;math;calculator;matrix;determinant;algebra;calculus;graph;plot;geometry;desmos;
+StartupWMClass=suisho
+StartupNotify=false

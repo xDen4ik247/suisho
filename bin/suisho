@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# suisho — open Suisho (math workbench) as a normal niri app (app-id "suisho"), or focus it when it is
+# already running. Close it like any window (Mod+Q). Your workspaces are autosaved.
+# Env: SUISHO_APP / SUISHO_TITLE / SUISHO_APP_ID; SUISHO_W / SUISHO_H set the first window size.
+APP="${SUISHO_APP:-$HOME/.local/share/suisho/app}"
+TITLE="${SUISHO_TITLE:-Suisho}"
+APP_ID="${SUISHO_APP_ID:-suisho}"
+# Already open? Focus it (shared helper ~/.local/bin/niri-focus-or-run: app-id + exact title).
+FOCUS=$(command -v niri-focus-or-run || echo "$HOME/.local/bin/niri-focus-or-run")
+if [ -x "$FOCUS" ] && "$FOCUS" --title "$TITLE" "$APP_ID"; then exit 0; fi
+# QS_APP_ID makes quickshell use this as the Wayland xdg-toplevel app-id (default org.quickshell).
+export SUISHO_APP="$APP" SUISHO_TITLE="$TITLE" QS_APP_ID="$APP_ID"
+exec quickshell -n -p "$APP/qml" "$@"

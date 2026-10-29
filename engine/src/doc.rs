@@ -215,6 +215,20 @@ impl Doc {
                         return out;
                     }
                 }
+                // exact symbolic form when the row is pure arithmetic with π, e, roots (√8 = 2√2, π/2 + π/3 = 5π/6)
+                if let Some(e) = crate::sym::from_ast(ast, o.degrees).filter(|e| !e.has_sym()) {
+                    let x = e.to_f64();
+                    if x.is_finite() {
+                        out["kind"] = json!("expr");
+                        out["value"] = json!(crate::sym::plain(&e));
+                        if !matches!(e.is_q(), Some(r) if r.is_integer()) {
+                            out["approx"] = json!(crate::num::fmt_float(x, o.digits));
+                        }
+                        out["vtype"] = json!("number");
+                        out["exact"] = json!(true);
+                        return out;
+                    }
+                }
                 match env.eval(ast, &HashMap::new()) {
                     Ok(Val::Bool(b)) if is_relation(ast) => {
                         out["kind"] = json!("rel");
@@ -379,6 +393,7 @@ mod tests {
         assert_eq!(r[3]["value"], "12");
         assert_eq!(r[4]["value"], "1/2");
         assert_eq!(r[4]["approx"], "0.5");
+        assert_eq!(r[4]["exact"], true);
         assert_eq!(r[5]["kind"], "graph");
         assert_eq!(r[6]["free"][0], "c");
         assert_eq!(r[7]["value"], "1267650600228229401496703205376");
@@ -399,7 +414,7 @@ mod tests {
     fn functions_and_trig() {
         let r = run(&["sqrt(8)", "sqrt(16/9)", "sin(pi/6)", "log_2 8", "5!", "nCr(10,3)", "|-3|+|2-5|", "gcd(12,18)", "(1,2)+(3,4)"]);
         assert_eq!(r[1]["value"], "4/3");
-        assert_eq!(r[2]["value"], "0.5");
+        assert_eq!(r[2]["value"], "1/2");
         assert_eq!(r[3]["value"], "3");
         assert_eq!(r[4]["value"], "120");
         assert_eq!(r[5]["value"], "120");

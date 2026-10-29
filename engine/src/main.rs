@@ -8,6 +8,7 @@ mod doc;
 mod eval;
 mod num;
 mod parse;
+mod sym;
 
 use doc::{list_workspaces, new_id, Doc, Opts};
 use serde_json::{json, Map, Value};

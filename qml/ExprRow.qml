@@ -97,7 +97,7 @@ Item {
 
         // result line
         Row {
-            visible: (row.hasOut && !(row.r.kind === "def" && row.r.vtype === "number" && row.r.value === bareValue())) || !!row.r.steps
+            visible: (row.hasOut && !(row.r.kind === "def" && row.r.vtype === "number" && row.r.value === bareValue())) || !!row.r.steps || !!row.r.lm
             anchors.right: parent.right
             spacing: 10
             function bareValue() { return (row.r.text || "").replace(/^.*=\s*/, "") }
@@ -130,6 +130,14 @@ Item {
                 color: stepsMouse.containsMouse ? theme.alpha(theme.accent, 0.30) : theme.alpha(theme.accent, 0.14)
                 Text { id: stepsText; anchors.centerIn: parent; text: app.tr("steps", "решение"); color: theme.text; font.family: theme.font; font.pixelSize: 12; font.weight: Font.Medium }
                 MouseArea { id: stepsMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: app.openSteps(row.r.id) }
+            }
+            Rectangle {
+                visible: !!row.r.lm
+                anchors.verticalCenter: parent.verticalCenter
+                width: lmText.implicitWidth + 18; height: 26; radius: 9
+                color: lmMouse.containsMouse ? theme.alpha(theme.c_peach, 0.35) : theme.alpha(theme.c_peach, 0.16)
+                Text { id: lmText; anchors.centerIn: parent; text: app.tr("show map", "показать"); color: theme.text; font.family: theme.font; font.pixelSize: 12; font.weight: Font.Medium }
+                MouseArea { id: lmMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: app.showLinmap(row.r.lm) }
             }
             // value box
             Rectangle {

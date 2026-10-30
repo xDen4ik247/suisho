@@ -240,6 +240,21 @@ impl Doc {
                     return out;
                 }
                 if let Ast::Call(f, args) = ast {
+                    if matches!(f.as_str(), "solve" | "eig" | "eigenvalues") && !args.is_empty() {
+                        match crate::steps::solve(ast, &mut env) {
+                            Ok(sol) => {
+                                out["kind"] = json!("solve");
+                                out["value"] = json!(crate::mtree::flat(&sol.answer));
+                                out["m"] = sol.answer;
+                                out["steps"] = json!(true);
+                            }
+                            Err(e) => {
+                                out["kind"] = json!("error");
+                                out["error"] = json!(e);
+                            }
+                        }
+                        return out;
+                    }
                     if (f == "expand" || f == "factor") && args.len() == 1 {
                         match crate::algebra::expand_factor(f, &args[0], &env) {
                             Some((plain, tree)) => {
@@ -357,6 +372,27 @@ fn fill_value(out: &mut Value, v: &Val, digits: usize) {
         Val::List(_) => "list",
         Val::Mat(m) => {
             out["shape"] = json!([m.r, m.c]);
+            if m.r == 2 && m.c == 2 {
+                // the linear map x ↦ A·x for the animated view: entries and the real eigen-directions
+                let (a, b, c, d) = (m.at(0, 0).to_f64(), m.at(0, 1).to_f64(), m.at(1, 0).to_f64(), m.at(1, 1).to_f64());
+                let (tr, det) = (a + d, a * d - b * c);
+                let disc = tr * tr - 4.0 * det;
+                let mut eig = Vec::new();
+                if disc >= -1e-12 {
+                    let s = disc.max(0.0).sqrt();
+                    for l in if s < 1e-12 { vec![tr / 2.0] } else { vec![(tr - s) / 2.0, (tr + s) / 2.0] } {
+                        let v = if b.abs() > 1e-12 { (b, l - a) } else if c.abs() > 1e-12 { (l - d, c) } else if (l - a).abs() < 1e-12 { (1.0, 0.0) } else { (0.0, 1.0) };
+                        let n = (v.0 * v.0 + v.1 * v.1).sqrt();
+                        if n > 0.0 {
+                            eig.push(json!([v.0 / n, v.1 / n, l]));
+                        }
+                        if s < 1e-12 && b.abs() < 1e-12 && c.abs() < 1e-12 {
+                            eig.push(json!([0.0, 1.0, l]));
+                        }
+                    }
+                }
+                out["lm"] = json!({"a": a, "b": b, "c": c, "d": d, "det": det, "eig": eig});
+            }
             out["cells"] = json!((0..m.r).map(|i| (0..m.c).map(|j| m.at(i, j).plain(digits)).collect::<Vec<_>>()).collect::<Vec<_>>());
             "matrix"
         }

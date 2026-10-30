@@ -57,7 +57,7 @@ pub const FUNCS: &[&str] = &[
     "exp", "sqrt", "cbrt", "abs", "floor", "ceil", "round", "sign", "sgn", "det", "tr", "trace", "rank", "inv", "rref",
     "transpose", "min", "max", "gcd", "lcm", "mod", "nCr", "nPr", "binom", "fact", "factorial", "mean", "median",
     "total", "sum", "length", "real", "imag", "conj", "arg", "re", "im", "frac", "eye", "ident", "root", "cross", "dot",
-    "norm", "deg", "rad", "expand", "factor",
+    "norm", "deg", "rad", "expand", "factor", "solve", "eigenvalues", "eig",
 ];
 /// Named constants and Greek letters (single variables).
 pub const NAMES: &[&str] = &[
@@ -593,7 +593,7 @@ impl Parser<'_> {
         let mut v = Vec::new();
         if self.peek() != Some(&Tok::Close(close)) {
             loop {
-                match self.expr() {
+                match self.relation() {
                     Ok(e) => v.push(e),
                     Err(e) => {
                         self.bar_depth = saved;

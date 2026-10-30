@@ -137,6 +137,7 @@ Item {
     Item {
         id: layer
         width: g.width; height: g.height
+        opacity: g.linmap ? 0.25 : 1
         transform: [Scale { xScale: g.k; yScale: g.k }, Translate { x: g.tx; y: g.ty }]
         Repeater {
             model: g.plotRows
@@ -219,6 +220,88 @@ Item {
                           ({ root: g.app.tr("  zero", "  нуль"), max: g.app.tr("  max", "  максимум"), min: g.app.tr("  min", "  минимум"),
                              yint: g.app.tr("  y-intercept", "  пересечение с Oy"), cross: g.app.tr("  intersection", "  пересечение") }[modelData.kind] || "")
                     color: g.theme.text; font.family: g.theme.font; font.pixelSize: 13
+                }
+            }
+        }
+    }
+
+    // ---- linear-map view (3Blue1Brown style): the grid, î, ĵ and the unit square under M(t) = (1 − t)·I + t·A;
+    // dashed lines are A's eigen-directions (vectors on them only stretch); the square's area is det M(t).
+    property var linmap: null
+    property real lt: 0
+    NumberAnimation { id: lmAnim; target: g; property: "lt"; from: 0; to: 1; duration: 2400; easing.type: Easing.InOutCubic }
+    function stopAnim() { lmAnim.stop() }
+    function showLinmap(m) { linmap = m; cx = 0; cy = 0; ppu = Math.max(20, Math.min(width, height) / 12); lt = 0; lmAnim.restart(); }
+    readonly property var lmM: linmap ? [1 + lt * (linmap.a - 1), lt * linmap.b, lt * linmap.c, 1 + lt * (linmap.d - 1)] : [1, 0, 0, 1]
+    function lmPt(x, y) { const m = lmM; return [sx(m[0] * x + m[1] * y), sy(m[2] * x + m[3] * y)] }
+    function lmLine(a, b) { const p = lmPt(a[0], a[1]), q = lmPt(b[0], b[1]); return "M " + p[0] + " " + p[1] + " L " + q[0] + " " + q[1] + " " }
+    readonly property string lmGrid: {
+        if (!linmap) return "";
+        let s = "";
+        const N = 12;
+        for (let k = -N; k <= N; k++) { s += lmLine([k, -N], [k, N]); s += lmLine([-N, k], [N, k]); }
+        return s;
+    }
+    readonly property string lmSquare: {
+        if (!linmap) return "";
+        const p = [lmPt(0, 0), lmPt(1, 0), lmPt(1, 1), lmPt(0, 1)];
+        return "M " + p.map(q => q[0] + " " + q[1]).join(" L ") + " Z";
+    }
+    function arrow(x, y) {
+        const o = lmPt(0, 0), e = lmPt(x, y);
+        const dx = e[0] - o[0], dy = e[1] - o[1], L = Math.max(1e-6, Math.hypot(dx, dy));
+        const ux = dx / L, uy = dy / L, h = Math.min(14, L * 0.4);
+        return "M " + o[0] + " " + o[1] + " L " + e[0] + " " + e[1] +
+               " M " + (e[0] - h * ux + h * 0.5 * uy) + " " + (e[1] - h * uy - h * 0.5 * ux) + " L " + e[0] + " " + e[1] +
+               " L " + (e[0] - h * ux - h * 0.5 * uy) + " " + (e[1] - h * uy + h * 0.5 * ux);
+    }
+    readonly property string lmEig: {
+        if (!linmap) return "";
+        let s = "";
+        const R = 1e3;
+        for (const v of linmap.eig || []) s += "M " + sx(-R * v[0]) + " " + sy(-R * v[1]) + " L " + sx(R * v[0]) + " " + sy(R * v[1]) + " ";
+        return s;
+    }
+    Item {
+        anchors.fill: parent
+        visible: !!g.linmap
+        Shape {
+            preferredRendererType: Shape.CurveRenderer
+            ShapePath { strokeColor: "transparent"; strokeWidth: -1; fillColor: g.theme.alpha(g.theme.c_peach, 0.28); PathSvg { path: g.lmSquare } }
+            ShapePath { strokeColor: g.theme.alpha(g.theme.accent, 0.42); strokeWidth: 1.2; fillColor: "transparent"; PathSvg { path: g.lmGrid } }
+            ShapePath { strokeColor: g.theme.alpha(g.theme.c_yellow, 0.9); strokeWidth: 1.8; fillColor: "transparent"; strokeStyle: ShapePath.DashLine; dashPattern: [5, 4]; PathSvg { path: g.lmEig } }
+            ShapePath { strokeColor: g.theme.c_green; strokeWidth: 3.2; fillColor: "transparent"; capStyle: ShapePath.RoundCap; joinStyle: ShapePath.RoundJoin; PathSvg { path: g.linmap ? g.arrow(1, 0) : "" } }
+            ShapePath { strokeColor: g.theme.c_red; strokeWidth: 3.2; fillColor: "transparent"; capStyle: ShapePath.RoundCap; joinStyle: ShapePath.RoundJoin; PathSvg { path: g.linmap ? g.arrow(0, 1) : "" } }
+        }
+        Rectangle {
+            anchors { left: parent.left; top: parent.top; margins: 12 }
+            width: lmInfo.implicitWidth + 24; height: lmInfo.implicitHeight + 16; radius: 10
+            color: g.theme.alpha(g.theme.base, 0.75)
+            Column {
+                id: lmInfo
+                anchors.centerIn: parent
+                spacing: 4
+                Text { text: g.app.tr("Linear map  x ↦ A·x", "Линейное отображение  x ↦ A·x"); color: g.theme.text; font.family: g.theme.font; font.pixelSize: 14; font.weight: Font.DemiBold }
+                Text { text: "det = " + g.app.num(g.lmM[0] * g.lmM[3] - g.lmM[1] * g.lmM[2]) + g.app.tr("   (area of the square)", "   (площадь квадрата)"); color: g.theme.c_peach; font.family: g.theme.font; font.pixelSize: 13 }
+                Text { text: "î → (" + g.app.num(g.lmM[0]) + ", " + g.app.num(g.lmM[2]) + ")"; color: g.theme.c_green; font.family: g.theme.font; font.pixelSize: 13 }
+                Text { text: "ĵ → (" + g.app.num(g.lmM[1]) + ", " + g.app.num(g.lmM[3]) + ")"; color: g.theme.c_red; font.family: g.theme.font; font.pixelSize: 13 }
+                Text {
+                    visible: g.linmap && (g.linmap.eig || []).length > 0
+                    text: "λ = " + (g.linmap ? (g.linmap.eig || []).map(v => g.app.num(v[2])).join(", ") : "") + g.app.tr("   (dashed: eigen-directions)", "   (пунктир: собственные направления)")
+                    color: g.theme.c_yellow; font.family: g.theme.font; font.pixelSize: 13
+                }
+                Row {
+                    spacing: 8
+                    Repeater {
+                        model: [{ s: g.app.tr("▶ replay", "▶ заново"), f: () => { g.lt = 0; lmAnim.restart(); } },
+                                { s: g.app.tr("✕ close", "✕ закрыть"), f: () => { lmAnim.stop(); g.linmap = null; } }]
+                        Rectangle {
+                            width: bt.implicitWidth + 16; height: 24; radius: 8
+                            color: btm.containsMouse ? g.theme.alpha(g.theme.accent, 0.3) : g.theme.alpha(g.theme.text, 0.08)
+                            Text { id: bt; anchors.centerIn: parent; text: modelData.s; color: g.theme.text; font.family: g.theme.font; font.pixelSize: 12 }
+                            MouseArea { id: btm; anchors.fill: parent; hoverEnabled: true; onClicked: modelData.f() }
+                        }
+                    }
                 }
             }
         }

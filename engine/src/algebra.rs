@@ -124,10 +124,10 @@ fn root_name(v: &str, k: Option<usize>) -> Value {
 }
 
 #[derive(Clone)]
-struct Root {
-    exact: Option<E>,
-    x: f64,
-    mult: u32,
+pub(crate) struct Root {
+    pub(crate) exact: Option<E>,
+    pub(crate) x: f64,
+    pub(crate) mult: u32,
 }
 
 fn rq(r: &BigRational) -> E {
@@ -137,7 +137,7 @@ fn rq(r: &BigRational) -> E {
 // ------------------------------------------------------------------ solving
 
 /// Roots of p with textbook steps.
-fn roots_with_steps(p: &Poly, v: &str, steps: &mut Vec<Step>) -> Vec<Root> {
+pub(crate) fn roots_with_steps(p: &Poly, v: &str, steps: &mut Vec<Step>) -> Vec<Root> {
     let mut roots: Vec<Root> = Vec::new();
     let mut p = p.clone();
     // x^k common factor
@@ -334,7 +334,7 @@ fn par_neg(r: &BigRational) -> Value {
     }
 }
 
-fn root_tree(r: &Root) -> Value {
+pub(crate) fn root_tree(r: &Root) -> Value {
     match &r.exact {
         Some(e) => e_tree(e),
         None => row(vec![t("≈ "), t(&crate::num::fmt_float(r.x, 8))]),

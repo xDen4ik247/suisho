@@ -71,7 +71,8 @@ fn eq() -> Value {
 pub fn available(a: &Ast) -> bool {
     let a = rhs(a);
     match a {
-        Ast::Call(f, args) if args.len() == 1 && matches!(f.as_str(), "det" | "inv" | "rref" | "rank" | "sqrt") => true,
+        Ast::Call(f, args) if args.len() == 1 && matches!(f.as_str(), "det" | "inv" | "rref" | "rank" | "sqrt" | "eig" | "eigenvalues") => true,
+        Ast::Call(f, args) if f == "solve" && !args.is_empty() => true,
         Ast::Call(f, args) if f == "root" && args.len() == 2 => true,
         Ast::Pow(_, e) => matches!(&**e, Ast::Neg(x) if **x == Ast::Num("1".into())),
         Ast::Add(..) | Ast::Sub(..) => fraction_terms(a).is_some(),
@@ -103,6 +104,8 @@ pub fn solve(a: &Ast, env: &mut Env) -> Result<Solution, String> {
         }
     };
     match a {
+        Ast::Call(f, args) if f == "solve" && !args.is_empty() => system_solution(a, args, env),
+        Ast::Call(f, args) if (f == "eig" || f == "eigenvalues") && args.len() == 1 => eigen_solution(a, &mat_of(env, &args[0])?),
         Ast::Call(f, args) if f == "det" && args.len() == 1 => det_solution(a, &mat_of(env, &args[0])?),
         Ast::Call(f, args) if f == "inv" && args.len() == 1 => inv_solution(a, &mat_of(env, &args[0])?),
         Ast::Pow(b, _) => inv_solution(a, &mat_of(env, b)?),
@@ -745,6 +748,23 @@ mod tests {
     }
 
     #[test]
+    fn systems_and_eigen() {
+        let s = sol("solve(2x + y = 5, x - y = 1)");
+        assert!(s.verified);
+        assert_eq!(crate::mtree::flat(&s.answer), "x=2;   y=1");
+        let s = sol("solve(x + y + z = 6, 2x - y + z = 3, x + 2y - z = 2)");
+        assert!(s.verified, "{}", crate::mtree::flat(&s.answer));
+        let s = sol("solve(x + y = 2, 2x + 2y = 4)");
+        assert!(s.verified);
+        assert!(crate::mtree::flat(&s.answer).contains("y∈ℝ"), "{}", crate::mtree::flat(&s.answer));
+        assert_eq!(crate::mtree::flat(&sol("solve(x + y = 1, x + y = 2)").answer), "∅");
+        let s = sol("eig([[2,1],[1,2]])");
+        assert!(s.verified);
+        assert_eq!(crate::mtree::flat(&s.answer), "λ_1=1;   λ_2=3");
+        assert!(sol("eig([[2,0,0],[0,3,4],[0,4,9]])").verified);
+    }
+
+    #[test]
     fn fractions_and_roots() {
         assert!(sol("1/3 + 1/6").verified);
         assert!(sol("2/3 - 5/4 + 1").verified);
@@ -752,4 +772,371 @@ mod tests {
         assert!(sol("root(54, 3)").verified);
         assert!(available(&parse("A^-1", &HashSet::new()).unwrap().unwrap()));
     }
+}
+
+// ------------------------------------------------------------------ systems of linear equations
+
+/// Coefficients of a linear expression in `vars` (+ constant), or None if it is not linear.
+fn linear(a: &Ast, vars: &[String], env: &mut Env) -> Option<(Vec<BigRational>, BigRational)> {
+    let n = vars.len();
+    let zero = || (vec![BigRational::zero(); n], BigRational::zero());
+    let scale = |(c, k): (Vec<BigRational>, BigRational), f: &BigRational| (c.iter().map(|x| x * f).collect::<Vec<_>>(), k * f);
+    let is_const = |v: &(Vec<BigRational>, BigRational)| v.0.iter().all(|x| x.is_zero());
+    Some(match a {
+        Ast::Num(s) => match Num::parse_decimal(s)? {
+            Num::Q(r) => (vec![BigRational::zero(); n], r),
+            _ => return None,
+        },
+        Ast::Var(v) => match vars.iter().position(|x| x == v) {
+            Some(i) => {
+                let mut c = zero();
+                c.0[i] = BigRational::one();
+                c
+            }
+            None => match env.vars.get(v) {
+                Some(Val::N(Num::Q(r))) => (vec![BigRational::zero(); n], r.clone()),
+                _ => return None,
+            },
+        },
+        Ast::Neg(x) => scale(linear(x, vars, env)?, &-BigRational::one()),
+        Ast::Add(x, y) | Ast::Sub(x, y) => {
+            let (a1, k1) = linear(x, vars, env)?;
+            let (a2, k2) = linear(y, vars, env)?;
+            let s = if matches!(a, Ast::Sub(..)) { -BigRational::one() } else { BigRational::one() };
+            (a1.iter().zip(&a2).map(|(p, q)| p + q * &s).collect(), k1 + k2 * s)
+        }
+        Ast::Mul(x, y, _) => {
+            let l = linear(x, vars, env)?;
+            let r = linear(y, vars, env)?;
+            if is_const(&l) {
+                scale(r, &l.1)
+            } else if is_const(&r) {
+                scale(l, &r.1)
+            } else {
+                return None;
+            }
+        }
+        Ast::Div(x, y) => {
+            let r = linear(y, vars, env)?;
+            if !is_const(&r) || r.1.is_zero() {
+                return None;
+            }
+            scale(linear(x, vars, env)?, &r.1.recip())
+        }
+        _ => return None,
+    })
+}
+
+fn unknowns(a: &Ast, env: &Env, out: &mut Vec<String>) {
+    match a {
+        Ast::Var(v) => {
+            if !env.vars.contains_key(v) && !matches!(v.as_str(), "pi" | "e" | "∞") && !out.contains(v) {
+                out.push(v.clone());
+            }
+        }
+        Ast::Neg(x) => unknowns(x, env, out),
+        Ast::Add(x, y) | Ast::Sub(x, y) | Ast::Mul(x, y, _) | Ast::Div(x, y) | Ast::Pow(x, y) => {
+            unknowns(x, env, out);
+            unknowns(y, env, out);
+        }
+        Ast::Rel(f, ch) => {
+            unknowns(f, env, out);
+            for (_, e) in ch {
+                unknowns(e, env, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn mat_q(rows: &[Vec<BigRational>]) -> Mat {
+    Mat { r: rows.len(), c: rows[0].len(), d: rows.iter().flatten().map(|x| Num::Q(x.clone())).collect() }
+}
+
+pub fn system_solution(a: &Ast, eqs: &[Ast], env: &mut Env) -> Result<Solution, String> {
+    let mut vars = Vec::new();
+    for e in eqs {
+        unknowns(e, env, &mut vars);
+    }
+    vars.sort_by_key(|v| (match v.as_str() { "x" => 0, "y" => 1, "z" => 2, "t" => 3, _ => 4 }, v.clone()));
+    let n = vars.len();
+    if n == 0 {
+        return Err("no unknowns in the system".into());
+    }
+    let mut rows: Vec<Vec<BigRational>> = Vec::new();
+    let mut rhs_v: Vec<BigRational> = Vec::new();
+    for e in eqs {
+        let Ast::Rel(l, ch) = e else { return Err("each item of a system is an equation (=)".into()) };
+        if ch.len() != 1 || ch[0].0 != Rel::Eq {
+            return Err("each item of a system is an equation (=)".into());
+        }
+        let (cl, kl) = linear(l, &vars, env).ok_or("the system is not linear")?;
+        let (cr, kr) = linear(&ch[0].1, &vars, env).ok_or("the system is not linear")?;
+        rows.push(cl.iter().zip(&cr).map(|(p, q)| p - q).collect());
+        rhs_v.push(kr - kl);
+    }
+    let m = eqs.len();
+    let am = mat_q(&rows);
+    let mut steps = Vec::new();
+    // the system in standard form
+    let mut sys_lines = Vec::new();
+    for i in 0..m {
+        let mut c = Vec::new();
+        for j in 0..n {
+            let a = &rows[i][j];
+            if a.is_zero() {
+                continue;
+            }
+            if c.is_empty() {
+                if a.is_negative() {
+                    c.push(t("−"));
+                }
+            } else {
+                c.push(op(if a.is_negative() { "−" } else { "+" }));
+            }
+            if !a.abs().is_one() {
+                c.push(rat(&a.abs()));
+            }
+            c.push(var(&vars[j]));
+        }
+        if c.is_empty() {
+            c.push(t("0"));
+        }
+        c.push(op("="));
+        c.push(rat(&rhs_v[i]));
+        sys_lines.push(row(c));
+    }
+    let mut first = step("Write the system in standard form (unknowns on the left, numbers on the right):",
+                         "Записываем систему в стандартном виде (неизвестные слева, числа справа):");
+    for l in sys_lines {
+        first = first.m(l);
+    }
+    steps.push(first);
+    let names = |vals: &[Value]| -> Value {
+        let mut c = Vec::new();
+        for (j, v) in vals.iter().enumerate() {
+            if j > 0 {
+                c.push(t(";   "));
+            }
+            if v["k"] == "free" {
+                c.extend([var(&vars[j]), op("∈"), t("ℝ")]);
+            } else {
+                c.extend([var(&vars[j]), op("="), v.clone()]);
+            }
+        }
+        row(c)
+    };
+    // Cramer for small square systems with det ≠ 0
+    if m == n && n <= 3 {
+        let d = am.det()?;
+        if !d.is_zero() {
+            let (dv, dsteps) = det_steps(&am, 0);
+            steps.push(step("Cramer's rule: Δ = det A (the coefficient matrix).", "Метод Крамера: Δ = det A (определитель матрицы коэффициентов).")
+                .m(row(vec![t("Δ"), eq(), det_bar(&am), eq(), num(&dv)]))
+                .subs(dsteps));
+            let mut sol = Vec::new();
+            for j in 0..n {
+                let mut mj = am.clone();
+                for i in 0..n {
+                    mj.d[i * n + j] = Num::Q(rhs_v[i].clone());
+                }
+                let (dj, djs) = det_steps(&mj, 0);
+                let xj = dj.div(&dv)?;
+                steps.push(step(&format!("Δ{}: replace column {} with the right-hand sides; {} = Δ{}/Δ.", j + 1, j + 1, vars[j], j + 1),
+                                &format!("Δ{}: заменяем {}-й столбец столбцом свободных членов; {} = Δ{}/Δ.", j + 1, j + 1, vars[j], j + 1))
+                    .m(row(vec![sub(t("Δ"), t(&(j + 1).to_string())), eq(), det_bar(&mj), eq(), num(&dj)]))
+                    .m(row(vec![var(&vars[j]), eq(), frac(num(&dj), num(&dv)), eq(), num(&xj)]))
+                    .subs(djs));
+                sol.push(xj);
+            }
+            // check by substitution
+            let ok = (0..m).all(|i| {
+                let mut s = Num::zero();
+                for j in 0..n {
+                    s = s.add(&Num::Q(rows[i][j].clone()).mul(&sol[j]).unwrap_or(Num::zero())).unwrap_or(Num::zero());
+                }
+                s.sub(&Num::Q(rhs_v[i].clone())).map(|x| x.is_zero()).unwrap_or(false)
+            });
+            steps.push(step("Check: substituting the values into every equation gives true equalities ✓", "Проверка: подстановка во все уравнения даёт верные равенства ✓"));
+            let ans = names(&sol.iter().map(num).collect::<Vec<_>>());
+            return Ok(Solution { en: "System of linear equations".into(), ru: "Система линейных уравнений".into(), problem: ast(a), steps, answer: ans, verified: ok });
+        }
+    }
+    // Gauss-Jordan on [A | b]
+    let mut aug = Mat { r: m, c: n + 1, d: Vec::new() };
+    for i in 0..m {
+        for j in 0..n {
+            aug.d.push(Num::Q(rows[i][j].clone()));
+        }
+        aug.d.push(Num::Q(rhs_v[i].clone()));
+    }
+    steps.push(step("Gauss-Jordan: write the augmented matrix [A | b] and reduce it with row operations.",
+                    "Метод Гаусса: записываем расширенную матрицу [A | b] и упрощаем её преобразованиями строк.")
+        .m(hl_rows(&aug, &[], Some(n))));
+    let pivots = gauss_jordan(&mut aug, n, Some(n), &mut steps);
+    // inconsistent row 0 … 0 | c
+    if let Some(i) = (0..m).find(|&i| (0..n).all(|j| aug.at(i, j).is_zero()) && !aug.at(i, n).is_zero()) {
+        steps.push(step(&format!("Row {} reads 0 = {}: a contradiction, so the system has no solutions (it is inconsistent).", i + 1, aug.at(i, n).plain(10)),
+                        &format!("Строка {} означает 0 = {}: противоречие, система несовместна (решений нет).", i + 1, aug.at(i, n).plain(10)))
+            .m(hl_rows(&aug, &[i], Some(n))));
+        return Ok(Solution { en: "System of linear equations".into(), ru: "Система линейных уравнений".into(), problem: ast(a), steps, answer: t("∅"), verified: true });
+    }
+    let free: Vec<usize> = (0..n).filter(|j| !pivots.contains(j)).collect();
+    let mut vals: Vec<Value> = vec![t("?"); n];
+    for (pi, &pc) in pivots.iter().enumerate() {
+        let mut c = vec![num(aug.at(pi, n))];
+        if aug.at(pi, n).is_zero() && !free.is_empty() {
+            c.clear();
+        }
+        for &f in &free {
+            let k = aug.at(pi, f);
+            if k.is_zero() {
+                continue;
+            }
+            let negk = k.neg();
+            if c.is_empty() {
+                if negk.sign() < 0 {
+                    c.push(t("−"));
+                }
+            } else {
+                c.push(op(if negk.sign() < 0 { "−" } else { "+" }));
+            }
+            if !negk.abs().sub(&Num::one()).map(|x| x.is_zero()).unwrap_or(false) {
+                c.push(num(&negk.abs()));
+            }
+            c.push(var(&vars[f]));
+        }
+        if c.is_empty() {
+            c.push(t("0"));
+        }
+        vals[pc] = row(c);
+    }
+    for &f in &free {
+        vals[f] = json!({"k": "free"});
+    }
+    if free.is_empty() {
+        steps.push(step("The left part is the identity: read the solution from the last column.", "Слева единичная матрица: решение читаем в последнем столбце."));
+    } else {
+        let fv: Vec<&str> = free.iter().map(|&f| vars[f].as_str()).collect();
+        steps.push(step(&format!("Fewer pivots ({}) than unknowns ({}): {} {} free; express the others through {}.",
+                                 pivots.len(), n, fv.join(", "), if fv.len() == 1 { "is" } else { "are" }, if fv.len() == 1 { "it" } else { "them" }),
+                        &format!("Ведущих элементов ({}) меньше, чем неизвестных ({}): {} — свободн{}; выражаем остальные через {}.",
+                                 pivots.len(), n, fv.join(", "), if fv.len() == 1 { "ая переменная" } else { "ые переменные" }, if fv.len() == 1 { "неё" } else { "них" })));
+    }
+    let ok = {
+        let (check, rank, _) = am.rref()?;
+        let _ = check;
+        rank == pivots.len()
+    };
+    Ok(Solution { en: "System of linear equations".into(), ru: "Система линейных уравнений".into(), problem: ast(a), steps, answer: names(&vals), verified: ok })
+}
+
+// ------------------------------------------------------------------ eigenvalues
+
+fn det_poly(m: &[Vec<crate::poly::Poly>]) -> crate::poly::Poly {
+    let n = m.len();
+    if n == 1 {
+        return m[0][0].clone();
+    }
+    let mut acc = crate::poly::Poly::zero();
+    for j in 0..n {
+        let minor: Vec<Vec<crate::poly::Poly>> = (1..n).map(|i| (0..n).filter(|&c| c != j).map(|c| m[i][c].clone()).collect()).collect();
+        let term = m[0][j].mul(&det_poly(&minor));
+        acc = if j % 2 == 0 { acc.add(&term) } else { acc.sub(&term) };
+    }
+    acc
+}
+
+pub fn eigen_solution(a: &Ast, m: &Mat) -> Result<Solution, String> {
+    use crate::poly::Poly;
+    if m.r != m.c || m.r > 4 {
+        return Err("eigenvalues: a square matrix up to 4×4".into());
+    }
+    let n = m.r;
+    let mut qm: Vec<Vec<BigRational>> = Vec::new();
+    for i in 0..n {
+        let mut r = Vec::new();
+        for j in 0..n {
+            match m.at(i, j) {
+                Num::Q(x) => r.push(x.clone()),
+                _ => return Err("eigenvalue steps need exact entries".into()),
+            }
+        }
+        qm.push(r);
+    }
+    // A − λI as a display matrix and as polynomials in λ
+    let lam = "λ";
+    let disp: Vec<Vec<Value>> = (0..n).map(|i| (0..n).map(|j| if i == j {
+        if qm[i][j].is_zero() { row(vec![t("−"), var(lam)]) } else { row(vec![rat(&qm[i][j]), op("−"), var(lam)]) }
+    } else { rat(&qm[i][j]) }).collect()).collect();
+    let pm: Vec<Vec<Poly>> = (0..n).map(|i| (0..n).map(|j| {
+        let c = Poly::constant(qm[i][j].clone());
+        if i == j { c.sub(&Poly::x()) } else { c }
+    }).collect()).collect();
+    let cp = det_poly(&pm);
+    let mut steps = vec![step("Characteristic equation: det(A − λI) = 0 (subtract λ on the main diagonal).",
+                              "Характеристическое уравнение: det(A − λE) = 0 (вычитаем λ на главной диагонали).")
+        .m(row(vec![json!({"k": "mat", "o": "|", "r": disp}), eq(), crate::algebra::poly_tree(&cp, lam), eq(), t("0")]))];
+    if n == 2 {
+        steps.push(step("For 2×2 it is always λ² − (tr A)·λ + det A, with tr A = a₁₁ + a₂₂.", "Для 2×2 это всегда λ² − (tr A)·λ + det A, где tr A = a₁₁ + a₂₂."));
+    }
+    let mut rsteps = Vec::new();
+    let roots = crate::algebra::roots_with_steps(&cp, lam, &mut rsteps);
+    steps.push(step("Solve the characteristic equation:", "Решаем характеристическое уравнение:").subs(rsteps));
+    let mut ans = Vec::new();
+    let mut verified = true;
+    for (k, r) in roots.iter().enumerate() {
+        let lname = sub(var(lam), t(&(k + 1).to_string()));
+        if k > 0 {
+            ans.push(t(";   "));
+        }
+        ans.extend([lname.clone(), eq(), crate::algebra::root_tree(r)]);
+        // eigenvectors for rational eigenvalues: the null space of A − λI
+        if let Some(crate::sym::E::Q(lv)) = &r.exact {
+            let shifted = Mat { r: n, c: n, d: (0..n * n).map(|ix| {
+                let (i, j) = (ix / n, ix % n);
+                Num::Q(if i == j { qm[i][j].clone() - lv } else { qm[i][j].clone() })
+            }).collect() };
+            let mut work = shifted.clone();
+            let mut sub_steps = vec![step("Solve (A − λI)·v = 0:", "Решаем (A − λE)·v = 0:").m(mat(&shifted))];
+            let piv = gauss_jordan(&mut work, n, None, &mut sub_steps);
+            let free: Vec<usize> = (0..n).filter(|j| !piv.contains(j)).collect();
+            let mut vecs = Vec::new();
+            for &f in &free {
+                let mut v = vec![BigRational::zero(); n];
+                v[f] = BigRational::one();
+                for (pi, &pc) in piv.iter().enumerate() {
+                    if let Num::Q(x) = work.at(pi, f) {
+                        v[pc] = -x.clone();
+                    }
+                }
+                // integer-scale for readability
+                let l = v.iter().fold(BigInt::one(), |acc, x| acc.lcm(x.denom()));
+                let v: Vec<BigRational> = v.iter().map(|x| x * BigRational::from_integer(l.clone())).collect();
+                // check A v = λ v
+                for i in 0..n {
+                    let lhs: BigRational = (0..n).map(|j| &qm[i][j] * &v[j]).sum();
+                    if lhs != lv * &v[i] {
+                        verified = false;
+                    }
+                }
+                vecs.push(v);
+            }
+            let mut line = vec![t("v = ")];
+            for (vi, v) in vecs.iter().enumerate() {
+                if vi > 0 {
+                    line.push(t(",  "));
+                }
+                line.push(json!({"k": "mat", "o": "(", "r": v.iter().map(|x| vec![rat(x)]).collect::<Vec<_>>()}));
+            }
+            steps.push(step(&format!("Eigenvectors for λ{} = {}:", k + 1, crate::sym::plain(&crate::sym::E::Q(lv.clone()))),
+                            &format!("Собственные векторы для λ{} = {}:", k + 1, crate::sym::plain(&crate::sym::E::Q(lv.clone()))))
+                .m(row(line))
+                .subs(sub_steps));
+        }
+    }
+    if roots.is_empty() {
+        ans.push(t("no real eigenvalues"));
+    }
+    Ok(Solution { en: "Eigenvalues and eigenvectors".into(), ru: "Собственные значения и векторы".into(), problem: ast(a), steps, answer: row(ans), verified })
 }

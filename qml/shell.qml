@@ -159,6 +159,7 @@ ShellRoot {
             const it = list.itemAtIndex(i);
             if (it) it.input.forceActiveFocus();
         }
+        function showLinmap(m) { stepsPanel.open = false; graph.showLinmap(m); }
         function openSteps(id) { stepsFor = id; send({ cmd: "steps", id: id }); }
         property var stepsFor: null
         property var selRow: null           // the row being edited (its points of interest are shown)
@@ -414,5 +415,6 @@ ShellRoot {
         function steps(i: int): void { if (i >= 0 && i < rowModel.count) app.openSteps(rowModel.get(i).rid) }
         function fresh(): void { app.send({ cmd: "ws_new", name: "Test" }) }
         function view(cx: real, cy: real, ppu: real): void { graph.cx = cx; graph.cy = cy; graph.ppu = ppu }
+        function linmap(i: int, t: real): void { const r = rowModel.get(i).rowData; if (r && r.lm) { graph.showLinmap(r.lm); graph.lt = t; graph.stopAnim(); } }
     }
 }

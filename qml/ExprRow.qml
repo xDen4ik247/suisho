@@ -113,7 +113,8 @@ Item {
             Text {
                 visible: row.r.kind === "graph" || row.r.kind === "func" || !!row.r.plots
                 text: row.r.kind === "func" ? app.tr("function of ", "функция от ") + (row.r.params || []).join(", ")
-                                            : app.tr("graph", "график")
+                      : row.r.conic ? (app.ru ? row.r.conic.ru : row.r.conic.en)
+                      : app.tr("graph", "график")
                 color: theme.alpha(row.tint, 0.95)
                 font.family: theme.font; font.pixelSize: 13; font.italic: true
             }

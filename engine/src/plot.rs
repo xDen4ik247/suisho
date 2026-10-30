@@ -970,6 +970,30 @@ pub fn plot(rows: &[(u64, u32, Ast, bool)], env: &mut Env, degrees: bool, v: Vie
                 // the grid starts a quarter view left/up of the window's view: shift into its pixel space
                 let (path, fill) = implicit(&g, &iv, rel, cell, -v.w * 0.25, -v.h * 0.25);
                 r["path"] = json!(path);
+                // a second-order curve: foci as points, directrices/asymptotes dashed
+                if rel == Rel::Eq {
+                    if let Some(c) = crate::geom::conic_coefs(ast, env) {
+                        let fe = crate::geom::features(&c);
+                        let mut d = String::new();
+                        use std::fmt::Write;
+                        for (a, b, cc) in &fe.lines {
+                            // a·x + b·y + c = 0 across the sampled area
+                            let (xa, xb) = (v.x0 - span, v.x1 + span);
+                            if b.abs() > 1e-9 {
+                                let _ = write!(d, "M{:.1} {:.1}L{:.1} {:.1}", v.px(xa), v.py(-(a * xa + cc) / b), v.px(xb), v.py(-(a * xb + cc) / b));
+                            } else if a.abs() > 1e-12 {
+                                let xv = -cc / a;
+                                let _ = write!(d, "M{:.1} {:.1}L{:.1} {:.1}", v.px(xv), -2.0 * v.h, v.px(xv), 3.0 * v.h);
+                            }
+                        }
+                        if !d.is_empty() {
+                            r["dash"] = json!(d);
+                        }
+                        if !fe.foci.is_empty() && fe.kind != "circle" {
+                            r["points"] = json!(fe.foci.iter().map(|p| json!([v.px(p.0), v.py(p.1), clean(p.0), clean(p.1)])).collect::<Vec<_>>());
+                        }
+                    }
+                }
                 if !fill.is_empty() {
                     r["fill"] = json!(fill);
                     r["dashed"] = json!(matches!(rel, Rel::Lt | Rel::Gt));

@@ -9,7 +9,7 @@ by a Rust engine (`engine/`, `suisho-engine`) over JSON lines.
 
 Open it with **Mod+=** (or the calculator key) or `suisho`.
 
-## Now (M1–M6)
+## Now (M1–M7)
 - **Rows like Desmos**: every row is an expression, a definition (`a = 3`, `f(x) = x^2 + a`, in any order), a matrix
   or a graph (`y = sin x`, `x^2 + y^2 < 4`). Enter adds a row, ↑↓ move, Backspace on an empty row removes it.
 - **Exact arithmetic**: fractions stay fractions (`1/3 + 1/6 = 1/2`), big integers stay exact (`2^100`), with a decimal
@@ -45,6 +45,10 @@ Open it with **Mod+=** (or the calculator key) or `suisho`.
 - **Function investigation** `analyze(f)` (исследование функции): domain, parity, periodicity, intercepts, vertical
   and slant asymptotes (dashed on the graph), monotonicity and extrema from f′, convexity and inflection points
   from f″, with sign charts. `tangent(f, a)` draws the tangent line, `diff(f)` plots f′.
+- **Second-order curves**: type any `Ax² + Bxy + Cy² + Dx + Ey + F = 0` (`x^2 + 4y^2 - 2x + 16y + 1 = 0`,
+  `5x^2 + 4xy + 8y^2 = 36`): the row names the curve, *steps* reduces it to canonical form — invariants δ, Δ, S,
+  completing the squares (exact semi-axes, c, eccentricity) or a rotation by tg 2θ = B/(A − C) — and the graph
+  shows the foci and the directrices/asymptotes.
 - **Grapher** (Desmos-style): `y = f(x)`, `x = g(y)`, any implicit curve `F(x, y) = G(x, y)` (`x² + y² = 9`,
   `sin(xy) = cos y`), inequalities with shading (dashed edge for < >), polar `r = 2cos(3θ)`, parametric
   `(cos t, sin t)` (range from `{0 < t < 1}`), points, restrictions `{x > 0}`, piecewise. Asymptotes are not joined.

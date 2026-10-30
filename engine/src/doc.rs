@@ -321,6 +321,11 @@ impl Doc {
                     }
                     Err(EvalErr::Free(n)) if GRAPH_VARS.contains(&n.as_str()) => {
                         out["kind"] = json!("graph");
+                        if let Some(c) = crate::geom::conic_coefs(ast, &env) {
+                            let k = crate::geom::features(&c).kind;
+                            out["conic"] = json!({"en": crate::geom::conic_name(k, false), "ru": crate::geom::conic_name(k, true)});
+                            out["steps"] = json!(true);
+                        }
                     }
                     Err(e) => fill_err(&mut out, &e),
                 }

@@ -97,6 +97,9 @@ pub fn solve(a: &Ast, env: &mut Env) -> Result<Solution, String> {
     if let Some(r) = crate::calc::solve_call(rhs(a), env.degrees) {
         return r;
     }
+    if let Some(c) = crate::geom::conic_coefs(a, env) {
+        return Ok(crate::geom::conic_solution(a, &c));
+    }
     let a = rhs(a);
     let no = HashMap::new();
     let mat_of = |env: &mut Env, x: &Ast| -> Result<Mat, String> {

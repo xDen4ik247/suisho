@@ -8,6 +8,7 @@ mod algebra;
 mod calc;
 mod doc;
 mod eval;
+mod geom;
 mod mtree;
 mod num;
 mod parse;

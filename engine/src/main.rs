@@ -9,6 +9,7 @@ mod eval;
 mod mtree;
 mod num;
 mod parse;
+mod plot;
 mod steps;
 mod sym;
 
@@ -144,6 +145,18 @@ impl App {
                 let h = r.get("hidden").and_then(|v| v.as_bool()).unwrap_or(true);
                 self.doc.set_hidden(id.ok_or("row_hide needs an id")?, h);
                 self.doc_reply()
+            }
+            "plot" => {
+                let v = r.get("view").ok_or("plot needs a view")?;
+                let g = |k: &str| v.get(k).and_then(|x| x.as_f64()).ok_or(format!("view.{k} missing"));
+                let view = plot::View { x0: g("x0")?, x1: g("x1")?, y0: g("y0")?, y1: g("y1")?, w: g("w")?, h: g("h")? };
+                if !(view.x1 > view.x0 && view.y1 > view.y0 && view.w >= 1.0 && view.h >= 1.0 && view.w <= 20000.0 && view.h <= 20000.0) {
+                    return Err("bad view".into());
+                }
+                let mut out = self.doc.plot(self.opts(), view);
+                out["type"] = json!("plot");
+                out["view"] = v.clone();
+                out
             }
             "steps" => {
                 let id = id.ok_or("steps needs an id")?;

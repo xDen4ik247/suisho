@@ -74,6 +74,7 @@ ShellRoot {
         stdout: SplitParser { onRead: data => app.receive(data) }
         stderr: SplitParser { onRead: data => console.warn("engine:", data) }
         onExited: (code, status) => {
+            app.ready = false;
             if (app.closing) return;
             // restart once a second at most; the workspace is autosaved, so nothing is lost
             app.restarts += 1;
@@ -92,6 +93,7 @@ ShellRoot {
         property var workspaces: []
         property string fatal: ""
         property bool closing: false
+        property bool ready: false            // the engine answered hello (requests before that would be lost)
         property int restarts: 0
         property int rid: 0
         property bool focusNext: false        // focus the row the next doc reply names (after Enter / ↓)
@@ -105,12 +107,17 @@ ShellRoot {
             let m;
             try { m = JSON.parse(line); } catch (e) { console.warn("bad line from engine:", line); return; }
             if (m.type === "hello") {
+                ready = true;
                 settings = m.settings; workspaces = m.workspaces || []; applyDoc(m.doc); restarts = 0;
+                graph.request();
             } else if (m.type === "doc") {
                 applyDoc(m);
                 if (m.workspaces) workspaces = m.workspaces;
+                graph.request();
             } else if (m.type === "settings") {
-                settings = m.settings; applyDoc(m.doc);
+                settings = m.settings; applyDoc(m.doc); graph.request();
+            } else if (m.type === "plot") {
+                graph.receive(m);
             } else if (m.type === "steps") {
                 if (m.id === stepsFor) { stepsPanel.sol = m.sol; stepsPanel.open = true; }
             } else if (m.type === "ws_list") {
@@ -154,6 +161,14 @@ ShellRoot {
         }
         function openSteps(id) { stepsFor = id; send({ cmd: "steps", id: id }); }
         property var stepsFor: null
+        property var selRow: null           // the row being edited (its points of interest are shown)
+        property var plotErrors: ({})       // row id → why it can't be graphed (e.g. "a is not defined")
+        function num(v) {
+            if (!isFinite(v)) return "—";
+            const a = Math.abs(v);
+            let s = a !== 0 && (a < 1e-4 || a >= 1e7) ? v.toExponential(4) : String(Number(v.toPrecision(7)));
+            return s.replace("-", "−");
+        }
         function setSetting(k, v) { const s = {}; s[k] = v; send({ cmd: "settings_set", set: s }); }
         function showToast(t) { toast = t; toastTimer.restart(); }
         function close() { closing = true; send({ cmd: "quit" }); Qt.callLater(Qt.quit); }
@@ -299,39 +314,11 @@ ShellRoot {
                 anchors.left: listPanel.right; anchors.right: parent.right; anchors.top: header.bottom; anchors.bottom: parent.bottom; anchors.margins: 14; anchors.topMargin: 8; anchors.leftMargin: 10
                 radius: 16
                 tintAlpha: 0.22
-                Item {
-                    id: plot
-                    anchors.fill: parent; anchors.margins: 1
-                    clip: true
-                    readonly property real unit: Math.max(24, Math.min(width, height) / 20)
-                    Repeater {
-                        model: Math.max(0, Math.ceil(plot.width / plot.unit) + 2)
-                        Rectangle {
-                            readonly property int k: index - Math.floor(plot.width / plot.unit / 2) - 1
-                            x: plot.width / 2 + k * plot.unit; width: 1; height: plot.height
-                            color: k === 0 ? theme.alpha(theme.text, 0.55) : theme.alpha(theme.text, k % 5 === 0 ? 0.13 : 0.05)
-                        }
-                    }
-                    Repeater {
-                        model: Math.max(0, Math.ceil(plot.height / plot.unit) + 2)
-                        Rectangle {
-                            readonly property int k: index - Math.floor(plot.height / plot.unit / 2) - 1
-                            y: plot.height / 2 + k * plot.unit; height: 1; width: plot.width
-                            color: k === 0 ? theme.alpha(theme.text, 0.55) : theme.alpha(theme.text, k % 5 === 0 ? 0.13 : 0.05)
-                        }
-                    }
-                    Rectangle {
-                        anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.margins: 16
-                        width: soon.implicitWidth + 24; height: soon.implicitHeight + 14; radius: 10
-                        color: theme.alpha(theme.base, 0.55)
-                        Text {
-                            id: soon
-                            anchors.centerIn: parent
-                            text: app.tr("The grapher is being built: rows marked “graph” will be drawn here.", "График в разработке: строки с пометкой «график» появятся здесь.")
-                            color: theme.subtext0
-                            font.family: theme.font; font.pixelSize: 13
-                        }
-                    }
+                Graph2D {
+                    id: graph
+                    anchors { fill: parent; margins: 1 }
+                    app: shell.appRef
+                    theme: shell.themeRef
                 }
             }
 
@@ -426,5 +413,6 @@ ShellRoot {
         function add(text: string): void { app.send({ cmd: "row_insert", text: text }) }
         function steps(i: int): void { if (i >= 0 && i < rowModel.count) app.openSteps(rowModel.get(i).rid) }
         function fresh(): void { app.send({ cmd: "ws_new", name: "Test" }) }
+        function view(cx: real, cy: real, ppu: real): void { graph.cx = cx; graph.cy = cy; graph.ppu = ppu }
     }
 }

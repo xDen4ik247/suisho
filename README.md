@@ -9,7 +9,7 @@ by a Rust engine (`engine/`, `suisho-engine`) over JSON lines.
 
 Open it with **Mod+=** (or the calculator key) or `suisho`.
 
-## Now (M1–M2)
+## Now (M1–M3)
 - **Rows like Desmos**: every row is an expression, a definition (`a = 3`, `f(x) = x^2 + a`, in any order), a matrix
   or a graph (`y = sin x`, `x^2 + y^2 < 4`). Enter adds a row, ↑↓ move, Backspace on an empty row removes it.
 - **Exact arithmetic**: fractions stay fractions (`1/3 + 1/6 = 1/2`), big integers stay exact (`2^100`), with a decimal
@@ -26,11 +26,17 @@ Open it with **Mod+=** (or the calculator key) or `suisho`.
   formula, rule of Sarrus, cofactor expansion along the row/column with the most zeros, triangular form for big
   ones), the inverse (2×2 formula or Gauss-Jordan on [A | I] with every row operation `R₂ ← R₂ − 3R₁`), rank and
   rref, sums of fractions over the least common denominator, simplifying roots. EN/RU.
+- **Grapher** (Desmos-style): `y = f(x)`, `x = g(y)`, any implicit curve `F(x, y) = G(x, y)` (`x² + y² = 9`,
+  `sin(xy) = cos y`), inequalities with shading (dashed edge for < >), polar `r = 2cos(3θ)`, parametric
+  `(cos t, sin t)` (range from `{0 < t < 1}`), points, restrictions `{x > 0}`, piecewise. Asymptotes are not joined.
+  Drag to pan, wheel/pinch to zoom (instant: geometry is re-sampled in the background), +/−/⌂ buttons.
+  **Sliders**: a row `a = 2` gets a slider with ▶ play; an undefined letter in a graph offers “+ slider a”.
+  **Points of interest** of the row you edit: zeros, extrema, y-intercept, intersections (click to pin).
 - Workspaces autosave (`~/.local/share/suisho/workspaces/`), EN/RU (Ctrl+L), RAD/DEG (Ctrl+D), Ctrl+N new, Ctrl+O list.
 
 ## Coming next (the plan)
-M3 the grapher (explicit, implicit, inequalities,
-parametric, polar, sliders, points of interest, smooth pan/zoom on the GPU) · M4 algebra with steps (factoring,
+M3 rest: GPU shaders for implicit plots, trace,
+export · M4 algebra with steps (factoring,
 equations, the interval method, systems) · M5 linear algebra with steps (Sarrus, cofactor expansion, Gauss-Jordan
 row by row, eigenvalues) + a linear-map animator · M6 calculus (derivatives, integrals, limits, full function
 investigation) · M7 analytic geometry 2D/3D (conics to canonical form) · M8 stats, units, bases · M9 trainer ·

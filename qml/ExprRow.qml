@@ -75,6 +75,7 @@ Item {
                 elide: Text.ElideRight
             }
             property bool fixing: false
+            onActiveFocusChanged: if (activeFocus) app.selRow = row.r.id
             onTextEdited: {
                 if (fixing) return;
                 const fixed = app.autocorrect(text, cursorPosition);
@@ -106,8 +107,8 @@ Item {
                 text: row.r.error || ""
                 color: theme.bad
                 font.family: theme.font; font.pixelSize: 13
-                width: Math.min(implicitWidth, col.width)
-                wrapMode: Text.WordWrap
+                width: Math.min(implicitWidth, col.width - 10)
+                elide: Text.ElideRight
             }
             Text {
                 visible: row.r.kind === "graph" || row.r.kind === "func"
@@ -170,6 +171,90 @@ Item {
                         font.family: theme.mathOut; font.pixelSize: 15
                         anchors.verticalCenter: parent.verticalCenter
                     }
+                }
+            }
+        }
+
+        // why a graph row can't be drawn, and the Desmos-style fix: add a slider for the undefined letter
+        Row {
+            readonly property string perr: app.plotErrors[row.r.id] || ""
+            readonly property var missing: {
+                const m = (perr || row.r.error || "").match(/^(\S+) is not defined/);
+                return m ? m[1] : (row.r.free && row.r.free.length ? row.r.free[0] : "");
+            }
+            visible: (row.r.kind === "graph" && perr !== "") || missing !== ""
+            anchors.right: parent.right
+            spacing: 10
+            Text {
+                visible: row.r.kind === "graph" && parent.perr !== ""
+                text: parent.perr
+                color: theme.bad; font.family: theme.font; font.pixelSize: 13
+                anchors.verticalCenter: parent.verticalCenter
+            }
+            Rectangle {
+                visible: parent.missing !== ""
+                width: addTxt.implicitWidth + 18; height: 26; radius: 9
+                color: addMouse.containsMouse ? theme.alpha(theme.accent, 0.30) : theme.alpha(theme.accent, 0.14)
+                Text { id: addTxt; anchors.centerIn: parent; text: "+ " + app.tr("slider ", "ползунок ") + parent.parent.missing; color: theme.text; font.family: theme.font; font.pixelSize: 12 }
+                MouseArea { id: addMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                            onClicked: app.send({ cmd: "row_insert", after: row.r.id, text: parent.parent.missing + " = 1" }) }
+            }
+        }
+
+        // slider for "a = 2.5" rows
+        Item {
+            id: slider
+            readonly property var m: (row.r.kind === "def" && row.r.vtype === "number") ? (row.r.text || "").match(/^\s*([^=\s]+)\s*=\s*(-?\d*\.?\d+)\s*$/) : null
+            readonly property real value: m ? parseFloat(m[2]) : 0
+            property real lo: Math.min(-10, Math.floor(value))
+            property real hi: Math.max(10, Math.ceil(value))
+            visible: !!m
+            width: parent.width; height: 30
+            function setValue(v) {
+                const step = (hi - lo) / 200;
+                v = Math.round(Math.max(lo, Math.min(hi, v)) / step) * step;
+                const txt = slider.m[1] + " = " + String(Number(v.toFixed(4)));
+                field.text = txt;
+                row.edited(txt);
+            }
+            Text { id: loT; anchors.verticalCenter: parent.verticalCenter; text: app.num(slider.lo); color: theme.subtext1; font.family: theme.font; font.pixelSize: 11 }
+            Rectangle {
+                id: track
+                anchors { left: loT.right; right: hiT.left; leftMargin: 10; rightMargin: 10; verticalCenter: parent.verticalCenter }
+                height: 4; radius: 2
+                color: theme.alpha(theme.text, 0.15)
+                Rectangle { width: knob.x + knob.width / 2; height: parent.height; radius: 2; color: theme.alpha(row.tint, 0.8) }
+                Rectangle {
+                    id: knob
+                    width: 16; height: 16; radius: 8
+                    anchors.verticalCenter: parent.verticalCenter
+                    x: (slider.value - slider.lo) / Math.max(1e-9, slider.hi - slider.lo) * track.width - width / 2
+                    color: row.tint
+                    border.width: 2; border.color: theme.alpha(theme.base, 0.8)
+                }
+                MouseArea {
+                    anchors { fill: parent; margins: -10 }
+                    onPressed: e => slider.setValue(slider.lo + (e.x - 10) / track.width * (slider.hi - slider.lo))
+                    onPositionChanged: e => { if (pressed) slider.setValue(slider.lo + (e.x - 10) / track.width * (slider.hi - slider.lo)); }
+                }
+            }
+            Text { id: hiT; anchors { right: play.left; rightMargin: 8; verticalCenter: parent.verticalCenter } text: app.num(slider.hi); color: theme.subtext1; font.family: theme.font; font.pixelSize: 11 }
+            Rectangle {
+                id: play
+                anchors { right: parent.right; verticalCenter: parent.verticalCenter }
+                width: 26; height: 26; radius: 13
+                color: anim.running ? theme.alpha(row.tint, 0.4) : theme.alpha(theme.text, 0.08)
+                Text { anchors.centerIn: parent; text: anim.running ? "❚❚" : "▶"; color: theme.text; font.pixelSize: 10 }
+                MouseArea { anchors.fill: parent; onClicked: anim.running = !anim.running }
+            }
+            Timer {
+                id: anim
+                interval: 40; repeat: true
+                property real dir: 1
+                onTriggered: {
+                    let v = slider.value + dir * (slider.hi - slider.lo) / 200;
+                    if (v >= slider.hi || v <= slider.lo) dir = -dir;
+                    slider.setValue(v);
                 }
             }
         }

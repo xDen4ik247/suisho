@@ -181,6 +181,21 @@ impl Doc {
         (env, parsed, def_err)
     }
 
+    /// Graph geometry of every graph row for a view.
+    pub fn plot(&self, o: Opts, v: crate::plot::View) -> Value {
+        let (mut env, parsed, _) = self.prepare(o);
+        let rows: Vec<(u64, u32, Ast, bool)> = self
+            .rows
+            .iter()
+            .zip(parsed)
+            .filter_map(|(r, p)| match p {
+                Ok(Some(a)) if !is_definition(&a) => Some((r.id, r.color, a, r.hidden)),
+                _ => None,
+            })
+            .collect();
+        crate::plot::plot(&rows, &mut env, o.degrees, v)
+    }
+
     /// The step-by-step solution of row `id`.
     pub fn solution(&self, id: u64, o: Opts) -> Result<Value, String> {
         let (mut env, parsed, _) = self.prepare(o);
@@ -338,6 +353,14 @@ fn fill_err(out: &mut Value, e: &EvalErr) {
             }
             out["error"] = json!(m);
         }
+    }
+}
+
+/// `a = 3` / `f(x) = …` (not graphs like y = …, x = …).
+fn is_definition(a: &Ast) -> bool {
+    match split_def(a) {
+        Some((name, params, _)) => !params.is_empty() || !GRAPH_VARS.contains(&name.as_str()),
+        None => false,
     }
 }
 

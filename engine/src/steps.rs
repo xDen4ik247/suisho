@@ -71,12 +71,13 @@ fn eq() -> Value {
 pub fn available(a: &Ast) -> bool {
     let a = rhs(a);
     match a {
-        Ast::Call(f, args) if args.len() == 1 && matches!(f.as_str(), "det" | "inv" | "rref" | "rank" | "sqrt" | "eig" | "eigenvalues") => true,
+        Ast::Call(f, args) if args.len() == 1 && f == "sqrt" => matches!(&args[0], Ast::Num(n) if !n.contains('.')),
+        Ast::Call(f, args) if args.len() == 2 && f == "root" => matches!(&args[0], Ast::Num(n) if !n.contains('.')),
+        Ast::Call(f, args) if args.len() == 1 && matches!(f.as_str(), "det" | "inv" | "rref" | "rank" | "eig" | "eigenvalues") => true,
         Ast::Call(f, args) if f == "solve" && !args.is_empty() => true,
         Ast::Call(f, args) if f == "linreg" && args.len() == 2 => true,
         Ast::Call(f, _) if matches!(f.as_str(), "line" | "distance" | "midpoint" | "triangle" | "plane" | "dot" | "cross" | "angle") => true,
         Ast::Call(f, args) if matches!(f.as_str(), "diff" | "derivative" | "integrate" | "int" | "lim" | "limit" | "analyze" | "investigate") && !args.is_empty() => true,
-        Ast::Call(f, args) if f == "root" && args.len() == 2 => true,
         Ast::Pow(_, e) => matches!(&**e, Ast::Neg(x) if **x == Ast::Num("1".into())),
         Ast::Add(..) | Ast::Sub(..) => fraction_terms(a).is_some(),
         _ => false,
@@ -85,7 +86,8 @@ pub fn available(a: &Ast) -> bool {
 
 fn rhs(a: &Ast) -> &Ast {
     if let Ast::Rel(l, chain) = a {
-        if chain.len() == 1 && chain[0].0 == Rel::Eq && matches!(**l, Ast::Var(_)) {
+        // "name = …" definitions (not graphs like y = …)
+        if chain.len() == 1 && chain[0].0 == Rel::Eq && matches!(&**l, Ast::Var(v) if !crate::doc::GRAPH_VARS.contains(&v.as_str())) {
             return &chain[0].1;
         }
     }

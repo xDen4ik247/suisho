@@ -123,6 +123,9 @@ ShellRoot {
                 if (graph3dLoader.item) graph3dLoader.item.receive(m);
             } else if (m.type === "tr_problem" || m.type === "tr_result" || m.type === "tr_stats") {
                 trainerPanel.receive(m);
+            } else if (m.type === "export") {
+                Quickshell.clipboardText = m.text;
+                showToast(m.fmt === "latex" ? tr("LaTeX copied", "LaTeX скопирован") : tr("Markdown copied", "Markdown скопирован"));
             } else if (m.type === "steps") {
                 if (m.id === stepsFor) { stepsPanel.sol = m.sol; stepsPanel.open = true; }
             } else if (m.type === "ws_list") {
@@ -164,7 +167,13 @@ ShellRoot {
             const it = list.itemAtIndex(i);
             if (it) it.input.forceActiveFocus();
         }
-        function showSolution(sol) { stepsFor = null; stepsPanel.sol = sol; stepsPanel.open = true; }
+        function showSolution(sol, source) { stepsFor = null; stepsSource = source || ""; stepsPanel.sol = sol; stepsPanel.open = true; }
+        property string stepsSource: ""
+        // copy the open solution as LaTeX or Markdown (the engine writes it)
+        function exportSteps(fmt) {
+            if (stepsFor !== null) send({ cmd: "export", id: stepsFor, fmt: fmt });
+            else if (stepsSource) send({ cmd: "export", source: stepsSource, fmt: fmt });
+        }
         function showLinmap(m) { stepsPanel.open = false; graph.showLinmap(m); }
         function openSteps(id) { stepsFor = id; send({ cmd: "steps", id: id }); }
         property var stepsFor: null
@@ -229,6 +238,7 @@ ShellRoot {
             Shortcut { sequences: ["Ctrl+D"]; onActivated: app.setSetting("angle", app.settings.angle === "deg" ? "rad" : "deg") }
             Shortcut { sequences: ["Ctrl+Shift+Z"]; onActivated: app.send({ cmd: "redo" }) }
             Shortcut { sequences: ["Ctrl+T"]; onActivated: trainerPanel.open = !trainerPanel.open }
+            Shortcut { sequences: ["F1"]; onActivated: helpPanel.open = !helpPanel.open }
             Shortcut { sequences: ["Escape"]; enabled: wsPanel.open || stepsPanel.open; onActivated: { if (wsPanel.open) wsPanel.open = false; else stepsPanel.open = false; } }
 
             // ---------------------------------------------------------- header
@@ -258,6 +268,7 @@ ShellRoot {
                         model: [
                             { label: app.settings.angle === "deg" ? "DEG" : "RAD", tip: "Ctrl+D", act: () => app.setSetting("angle", app.settings.angle === "deg" ? "rad" : "deg") },
                             { label: app.ru ? "RU" : "EN", tip: "Ctrl+L", act: () => app.setSetting("lang", app.ru ? "en" : "ru") },
+                            { label: "?", tip: "F1", act: () => helpPanel.open = !helpPanel.open },
                             { label: app.tr("Trainer", "Тренажёр"), tip: "Ctrl+T", act: () => trainerPanel.open = !trainerPanel.open },
                             { label: app.tr("New", "Новый"), tip: "Ctrl+N", act: () => app.send({ cmd: "ws_new" }) }
                         ]
@@ -363,6 +374,14 @@ ShellRoot {
                 app: shell.appRef
                 anchors.fill: graphPanel
                 z: 4
+            }
+
+            HelpPanel {
+                id: helpPanel
+                theme: shell.themeRef
+                app: shell.appRef
+                anchors.fill: graphPanel
+                z: 6
             }
 
             StepsPanel {

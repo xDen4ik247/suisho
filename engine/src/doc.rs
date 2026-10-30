@@ -252,6 +252,7 @@ impl Doc {
                     }
                     Ok(Some(a)) => a,
                 };
+                out["in"] = crate::mtree::ast(ast);
                 if crate::steps::available(ast) {
                     out["steps"] = json!(true);
                 }

@@ -56,8 +56,24 @@ Item {
         anchors.left: tab.right; anchors.right: parent.right; anchors.top: parent.top; anchors.leftMargin: 14; anchors.rightMargin: 14; anchors.topMargin: 9
         spacing: 4
 
+        // the row's input: typeset math while you're not editing it (click to edit), the text while you are
+        Item {
+            id: inputBox
+            readonly property bool pretty: !field.activeFocus && !!row.r.in && row.r.kind !== "empty" && field.text !== ""
+            width: parent.width
+            height: pretty ? Math.max(28, prettyView.implicitHeight) : field.implicitHeight
+            Flickable {
+                anchors.fill: parent
+                visible: inputBox.pretty
+                contentWidth: prettyView.implicitWidth
+                interactive: contentWidth > width
+                clip: true
+                MathView { id: prettyView; tree: row.r.in || null; size: 20; color: theme.text; accent: theme.accent; ru: app.ru; family: theme.mathOut }
+                MouseArea { anchors.fill: parent; cursorShape: Qt.IBeamCursor; onClicked: { field.forceActiveFocus(); field.cursorPosition = field.text.length; } }
+            }
         TextInput {
             id: field
+            opacity: inputBox.pretty ? 0 : 1
             width: parent.width
             text: row.r.text || ""
             color: theme.text
@@ -93,6 +109,8 @@ Item {
                 else if (event.key === Qt.Key_Down) { row.down(); event.accepted = true; }
                 else if (event.key === Qt.Key_Backspace && text === "") { row.removeEmpty(); event.accepted = true; }
             }
+        }
+
         }
 
         // result line

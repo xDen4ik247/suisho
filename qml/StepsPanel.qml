@@ -37,6 +37,19 @@ Glass {
                 }
             }
         }
+        Row {
+            anchors { right: parent.right; top: parent.top; rightMargin: 34 }
+            spacing: 6
+            Repeater {
+                model: [{ s: app.tr("Copy LaTeX", "Копировать LaTeX"), f: "latex" }, { s: "Markdown", f: "md" }]
+                Rectangle {
+                    width: cl.implicitWidth + 16; height: 26; radius: 8
+                    color: cm.containsMouse ? sp.theme.alpha(sp.theme.accent, 0.3) : sp.theme.alpha(sp.theme.text, 0.07)
+                    Text { id: cl; anchors.centerIn: parent; text: modelData.s; color: sp.theme.text; font.family: sp.theme.font; font.pixelSize: 12 }
+                    MouseArea { id: cm; anchors.fill: parent; hoverEnabled: true; onClicked: app.exportSteps(modelData.f) }
+                }
+            }
+        }
         Text {
             anchors { right: parent.right; top: parent.top }
             text: "✕"; color: sp.theme.subtext1; font.pixelSize: 18

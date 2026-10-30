@@ -143,7 +143,7 @@ Glass {
                 Repeater {
                     model: [
                         { s: app.tr("Check  ⏎", "Проверить  ⏎"), on: !tp.result, f: () => tp.submit() },
-                        { s: app.tr("Show solution", "Показать решение"), on: !!(tp.result && tp.result.solution), f: () => app.showSolution(tp.result.solution) },
+                        { s: app.tr("Show solution", "Показать решение"), on: !!(tp.result && tp.result.solution), f: () => app.showSolution(tp.result.solution, tp.problem.source) },
                         { s: app.tr("Next  ⏎", "Дальше  ⏎"), on: !!tp.result, f: () => tp.next() },
                         { s: app.tr("Skip", "Пропустить"), on: !tp.result, f: () => tp.next() }
                     ]

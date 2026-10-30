@@ -193,6 +193,20 @@ impl App {
                     Err(e) => json!({"type": "tr_result", "pid": pid, "invalid": e}),
                 }
             }
+            "export" => {
+                // a row's solution, or one given by its source text (trainer problems)
+                let fmt = r.get("fmt").and_then(|v| v.as_str()).unwrap_or("md");
+                let ru = self.settings.get("lang").and_then(|v| v.as_str()) == Some("ru");
+                let sol = if let Some(id) = id {
+                    self.doc.solution(id, self.opts())?
+                } else {
+                    let src = r.get("source").and_then(|v| v.as_str()).ok_or("export needs an id or a source")?;
+                    let ast = parse::parse(src, &Default::default())?.ok_or("empty")?;
+                    let mut env = eval::Env::default();
+                    steps::solve(&ast, &mut env)?.json()
+                };
+                json!({"type": "export", "fmt": fmt, "text": mtree::export_solution(&sol, fmt, ru)})
+            }
             "tr_stats" => json!({"type": "tr_stats", "stats": self.trainer.stats(), "streak": self.trainer.streak}),
             "steps" => {
                 let id = id.ok_or("steps needs an id")?;

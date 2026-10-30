@@ -9,7 +9,7 @@ by a Rust engine (`engine/`, `suisho-engine`) over JSON lines.
 
 Open it with **Mod+=** (or the calculator key) or `suisho`.
 
-## Now (M1–M9)
+## What it does
 - **Rows like Desmos**: every row is an expression, a definition (`a = 3`, `f(x) = x^2 + a`, in any order), a matrix
   or a graph (`y = sin x`, `x^2 + y^2 < 4`). Enter adds a row, ↑↓ move, Backspace on an empty row removes it.
 - **Exact arithmetic**: fractions stay fractions (`1/3 + 1/6 = 1/2`), big integers stay exact (`2^100`), with a decimal
@@ -73,13 +73,15 @@ Open it with **Mod+=** (or the calculator key) or `suisho`.
   Drag to pan, wheel/pinch to zoom (instant: geometry is re-sampled in the background), +/−/⌂ buttons.
   **Sliders**: a row `a = 2` gets a slider with ▶ play; an undefined letter in a graph offers “+ slider a”.
   **Points of interest** of the row you edit: zeros, extrema, y-intercept, intersections (click to pin).
+- **Looks like math**: rows show as typeset math when you're not editing them (click to edit); results, steps and
+  matrices are drawn with real fractions, roots and brackets. *Copy LaTeX* / *Markdown* puts a whole solution on
+  the clipboard (Obsidian/Overleaf-ready). F1 lists everything you can type.
 - Workspaces autosave (`~/.local/share/suisho/workspaces/`), EN/RU (Ctrl+L), RAD/DEG (Ctrl+D), Ctrl+N new, Ctrl+O list.
 
-## Coming next (the plan)
-M3 rest: GPU shaders for implicit plots, trace,
-export · M4 rest: rational equations with
-the domain, |x|, systems · M7 analytic geometry 2D/3D (conics to canonical form) ·
-M10 structural editor.
+## Not yet
+A structural (MathQuill-style) editor — input is typed text with live typeset display for now; GPU shaders for
+implicit plots (they are sampled on the CPU, smooth enough so far); exact (surd) eigenvectors for irrational
+eigenvalues; |x| and rational equations with the domain in the equation solver.
 
 ## Build / install
 `./install.sh` (needs `cargo`): builds the engine and installs to `~/.local/share/suisho/app`, `~/.local/bin/suisho`.

@@ -414,3 +414,113 @@ pub fn flat(v: &Value) -> String {
         _ => String::new(),
     }
 }
+
+/// The tree as LaTeX.
+pub fn latex(v: &Value) -> String {
+    let greek = |s: &str| -> String {
+        let map = [("π", "\\pi "), ("λ", "\\lambda "), ("θ", "\\theta "), ("α", "\\alpha "), ("β", "\\beta "), ("φ", "\\varphi "), ("Δ", "\\Delta "),
+                   ("δ", "\\delta "), ("∞", "\\infty "), ("−", "-"), ("·", "\\cdot "), ("≤", "\\le "), ("≥", "\\ge "), ("≠", "\\ne "), ("→", "\\to "),
+                   ("←", "\\leftarrow "), ("↔", "\\leftrightarrow "), ("⇒", "\\Rightarrow "), ("±", "\\pm "), ("∈", "\\in "), ("∪", "\\cup "),
+                   ("ℝ", "\\mathbb{R}"), ("∅", "\\varnothing "), ("∫", "\\int "), ("′", "'"), ("×", "\\times "), ("°", "^\\circ "), ("∄", "\\nexists ")];
+        let mut out = s.to_string();
+        for (a, b) in map {
+            out = out.replace(a, b);
+        }
+        out
+    };
+    match v["k"].as_str() {
+        Some("t") => {
+            let s = v["s"].as_str().unwrap_or("");
+            if v["it"].as_i64() == Some(1) || s.chars().all(|c| c.is_ascii_digit() || "+-=()[],.;: ".contains(c) || "−·≤≥≠→←⇒±∈∪ℝ∅∫′×°∞πλθαβφΔδ∄".contains(c)) {
+                greek(s)
+            } else if s.trim().is_empty() {
+                "\\;".into()
+            } else {
+                format!("\\text{{{}}}", s.replace('{', "\\{").replace('}', "\\}"))
+            }
+        }
+        Some("row") => v["c"].as_array().map(|c| c.iter().map(latex).collect::<Vec<_>>().join("")).unwrap_or_default(),
+        Some("frac") => format!("\\frac{{{}}}{{{}}}", latex(&v["n"]), latex(&v["d"])),
+        Some("sup") => format!("{{{}}}^{{{}}}", latex(&v["b"]), latex(&v["e"])),
+        Some("sub") => format!("{{{}}}_{{{}}}", latex(&v["b"]), latex(&v["e"])),
+        Some("sqrt") => match v["i"].as_str() {
+            Some(i) => format!("\\sqrt[{i}]{{{}}}", latex(&v["a"])),
+            None => format!("\\sqrt{{{}}}", latex(&v["a"])),
+        },
+        Some("par") => {
+            let (o, c) = (v["o"].as_str().unwrap_or("("), v["c"].as_str().unwrap_or(")"));
+            let br = |s: &str| match s { "|" => "|".to_string(), "[" => "[".into(), "]" => "]".into(), "{" => "\\{".into(), "}" => "\\}".into(), x => x.to_string() };
+            format!("\\left{}{}\\right{}", br(o), latex(&v["a"]), br(c))
+        }
+        Some("mat") => {
+            let env = match v["o"].as_str() { Some("|") => "vmatrix", Some("[") => "bmatrix", _ => "pmatrix" };
+            let aug = v["aug"].as_u64();
+            let rows: Vec<String> = v["r"].as_array().map(|r| r.iter().map(|row| {
+                row.as_array().map(|cells| cells.iter().enumerate().map(|(j, c)| {
+                    let s = latex(c);
+                    if aug == Some(j as u64) { format!("\\vline\\; {s}") } else { s }
+                }).collect::<Vec<_>>().join(" & ")).unwrap_or_default()
+            }).collect()).unwrap_or_default();
+            format!("\\begin{{{env}}}{}\\end{{{env}}}", rows.join(" \\\\ "))
+        }
+        Some("hl") => latex(&v["a"]),
+        _ => String::new(),
+    }
+}
+
+/// A whole solution (as sent to the window) as Markdown with $$ math, or as a LaTeX document body.
+pub fn export_solution(sol: &Value, fmt: &str, ru: bool) -> String {
+    let lang = if ru { "ru" } else { "en" };
+    let mut out = String::new();
+    let md = fmt != "latex";
+    let title = sol[lang].as_str().unwrap_or("");
+    if md {
+        out.push_str(&format!("### {title}\n\n$${}$$\n\n", latex(&sol["problem"])));
+    } else {
+        out.push_str(&format!("\\subsection*{{{title}}}\n\\[ {} \\]\n\\begin{{enumerate}}\n", latex(&sol["problem"])));
+    }
+    fn steps(list: &Value, depth: usize, md: bool, lang: &str, out: &mut String) {
+        for (i, s) in list.as_array().into_iter().flatten().enumerate() {
+            let words = s[lang].as_str().unwrap_or("");
+            let head = if s["head"].is_null() { String::new() } else { format!(" ${}$", latex(&s["head"])) };
+            if md {
+                out.push_str(&format!("{}{}. {}{}\n", "   ".repeat(depth), i + 1, words, head));
+                for m in s["math"].as_array().into_iter().flatten() {
+                    out.push_str(&format!("{}   $${}$$\n", "   ".repeat(depth), latex(m)));
+                }
+            } else {
+                out.push_str(&format!("\\item {}{}\n", words.replace('%', "\\%"), head));
+                for m in s["math"].as_array().into_iter().flatten() {
+                    out.push_str(&format!("\\[ {} \\]\n", latex(m)));
+                }
+            }
+            if s["sub"].as_array().is_some_and(|a| !a.is_empty()) {
+                if !md {
+                    out.push_str("\\begin{enumerate}\n");
+                }
+                steps(&s["sub"], depth + 1, md, lang, out);
+                if !md {
+                    out.push_str("\\end{enumerate}\n");
+                }
+            }
+        }
+    }
+    steps(&sol["steps"], 0, md, lang, &mut out);
+    let ans = if ru { "Ответ" } else { "Answer" };
+    if md {
+        out.push_str(&format!("\n**{ans}:** ${}$\n", latex(&sol["answer"])));
+    } else {
+        out.push_str(&format!("\\end{{enumerate}}\n\\textbf{{{ans}:}} \\( {} \\)\n", latex(&sol["answer"])));
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn latex_out() {
+        let v = row(vec![frac(t("1"), t("2")), op("+"), sqrt(t("2"), None), op("·"), sup(var("x"), t("2"))]);
+        assert_eq!(latex(&v), "\\frac{1}{2}+\\sqrt{2}\\cdot {x}^{2}");
+    }
+}

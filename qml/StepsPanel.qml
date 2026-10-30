@@ -52,7 +52,7 @@ Glass {
                 id: body
                 width: fl.width - 8
                 spacing: 16
-                MathView { tree: sp.sol ? sp.sol.problem : null; size: 22; color: sp.theme.text; accent: sp.theme.accent }
+                MathView { tree: sp.sol ? sp.sol.problem : null; size: 22; color: sp.theme.text; accent: sp.theme.accent; ru: app.ru }
                 Repeater {
                     model: sp.sol ? sp.sol.steps : []
                     StepItem { width: body.width; app: sp.app; theme: sp.theme; s: modelData; num: String(index + 1) }
@@ -61,7 +61,7 @@ Glass {
                 Row {
                     spacing: 12
                     Text { text: app.tr("Answer", "Ответ"); color: sp.theme.subtext1; font.family: sp.theme.font; font.pixelSize: 15; anchors.verticalCenter: parent.verticalCenter }
-                    MathView { tree: sp.sol ? sp.sol.answer : null; size: 22; color: sp.theme.text; accent: sp.theme.accent; anchors.verticalCenter: parent.verticalCenter }
+                    MathView { tree: sp.sol ? sp.sol.answer : null; size: 22; color: sp.theme.text; accent: sp.theme.accent; ru: app.ru; anchors.verticalCenter: parent.verticalCenter }
                 }
             }
         }

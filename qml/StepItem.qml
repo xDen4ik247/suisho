@@ -35,7 +35,7 @@ Column {
             MathView {
                 visible: !!si.s.head
                 tree: si.s.head || null
-                size: 16; color: theme.accent; accent: theme.accent
+                size: 16; color: theme.accent; accent: theme.accent; ru: app.ru
             }
             Repeater {
                 model: si.s.math || []
@@ -45,7 +45,7 @@ Column {
                     contentWidth: mvLine.implicitWidth
                     clip: true
                     interactive: contentWidth > width
-                    MathView { id: mvLine; tree: modelData; size: si.depth ? 16 : 18; color: theme.text; accent: theme.accent }
+                    MathView { id: mvLine; tree: modelData; size: si.depth ? 16 : 18; color: theme.text; accent: theme.accent; ru: app.ru }
                 }
             }
             // sub-steps

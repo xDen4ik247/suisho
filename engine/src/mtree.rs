@@ -389,3 +389,22 @@ fn ast_p(a: &Ast, level: u8) -> Value {
         ast(a)
     }
 }
+
+/// The tree as plain text (for tests and the row's text value).
+pub fn flat(v: &Value) -> String {
+    match v["k"].as_str() {
+        Some("t") => v["s"].as_str().unwrap_or("").to_string(),
+        Some("row") => v["c"].as_array().map(|c| c.iter().map(flat).collect()).unwrap_or_default(),
+        Some("frac") => format!("{}/{}", flat(&v["n"]), flat(&v["d"])),
+        Some("sqrt") => match v["i"].as_str() {
+            Some(i) => format!("root({}, {i})", flat(&v["a"])),
+            None => format!("√{}", flat(&v["a"])),
+        },
+        Some("sup") => format!("{}^{}", flat(&v["b"]), flat(&v["e"])),
+        Some("sub") => format!("{}_{}", flat(&v["b"]), flat(&v["e"])),
+        Some("par") => format!("{}{}{}", v["o"].as_str().unwrap_or("("), flat(&v["a"]), v["c"].as_str().unwrap_or(")")),
+        Some("hl") => flat(&v["a"]),
+        Some("mat") => "[matrix]".into(),
+        _ => String::new(),
+    }
+}

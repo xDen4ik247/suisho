@@ -4,12 +4,14 @@
 //! Paths: workspaces in $SUISHO_DATA (~/.local/share/suisho/workspaces), settings in $SUISHO_CONFIG
 //! (~/.config/suisho/settings.json).
 
+mod algebra;
 mod doc;
 mod eval;
 mod mtree;
 mod num;
 mod parse;
 mod plot;
+mod poly;
 mod steps;
 mod sym;
 

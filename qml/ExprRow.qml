@@ -9,7 +9,7 @@ Item {
     property int index: 0
     property var r: ({})                 // the engine's row
     readonly property color tint: app.palette[(r.color || 0) % app.palette.length]
-    readonly property bool hasOut: r.kind === "expr" || r.kind === "def" || r.kind === "rel" || r.kind === "error"
+    readonly property bool hasOut: r.kind === "expr" || r.kind === "def" || r.kind === "rel" || r.kind === "error" || r.kind === "solve"
                                    || r.kind === "graph" || r.kind === "func"
     property alias input: field
     height: Math.max(56, col.implicitHeight + 18)
@@ -133,7 +133,7 @@ Item {
             }
             // value box
             Rectangle {
-                visible: (row.r.kind === "expr" || row.r.kind === "def") && row.r.value !== undefined
+                visible: (row.r.kind === "expr" || row.r.kind === "def" || row.r.kind === "solve") && row.r.value !== undefined
                 width: valueRow.implicitWidth + 18
                 height: valueRow.implicitHeight + 8
                 radius: 8
@@ -143,6 +143,7 @@ Item {
                     anchors.centerIn: parent
                     spacing: 10
                     Text {
+                        visible: row.r.kind !== "solve"
                         text: "="
                         color: theme.text
                         font.family: theme.mathOut; font.pixelSize: 18
@@ -154,6 +155,7 @@ Item {
                         size: 19
                         color: theme.text
                         accent: theme.accent
+                        ru: app.ru
                         family: theme.mathOut
                         anchors.verticalCenter: parent.verticalCenter
                     }

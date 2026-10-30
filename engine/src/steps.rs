@@ -23,19 +23,19 @@ pub struct Step {
     sub: Vec<Step>,
 }
 
-fn step(en: &str, ru: &str) -> Step {
+pub(crate) fn step(en: &str, ru: &str) -> Step {
     Step { en: en.into(), ru: ru.into(), head: None, math: vec![], sub: vec![] }
 }
 impl Step {
-    fn m(mut self, v: Value) -> Step {
+    pub(crate) fn m(mut self, v: Value) -> Step {
         self.math.push(v);
         self
     }
-    fn head(mut self, v: Value) -> Step {
+    pub(crate) fn head(mut self, v: Value) -> Step {
         self.head = Some(v);
         self
     }
-    fn subs(mut self, s: Vec<Step>) -> Step {
+    pub(crate) fn subs(mut self, s: Vec<Step>) -> Step {
         self.sub = s;
         self
     }
@@ -89,6 +89,9 @@ fn rhs(a: &Ast) -> &Ast {
 }
 
 pub fn solve(a: &Ast, env: &mut Env) -> Result<Solution, String> {
+    if let Some((v, rel, p, z)) = crate::algebra::detect(a, env) {
+        return Ok(crate::algebra::solve(a, &v, rel, &p, z));
+    }
     let a = rhs(a);
     let no = HashMap::new();
     let mat_of = |env: &mut Env, x: &Ast| -> Result<Mat, String> {

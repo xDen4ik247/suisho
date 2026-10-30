@@ -11,12 +11,14 @@ Item {
     property color color: "white"
     property color accent: "#b9c3ff"
     property string family: "DejaVu Math TeX Gyre"
+    property bool ru: false                 // Russian notation where the engine offers one (interval "; ")
     // laid out imperatively (a binding would loop: measuring writes to the TextMetrics it reads)
     property var lay: ({ w: 0, asc: 0, desc: 0, p: [] })
     function relayout() { lay = tree ? layout(tree, size) : { w: 0, asc: 0, desc: 0, p: [] } }
     onTreeChanged: relayout()
     onSizeChanged: relayout()
     onFamilyChanged: relayout()
+    onRuChanged: relayout()
     Component.onCompleted: relayout()
     implicitWidth: Math.ceil(lay.w) + 2
     implicitHeight: Math.ceil(lay.asc + lay.desc) + 2
@@ -51,7 +53,8 @@ Item {
         const axis = px * 0.26, stroke = Math.max(1, px * 0.06);
         switch (n.k) {
         case "t": {
-            const s = n.it ? italic(n.s) : n.s;
+            const raw = (ru && n.ru !== undefined) ? n.ru : n.s;
+            const s = n.it ? italic(raw) : raw;
             const pad = n.op ? px * 0.24 : 0;
             const w = measure(s, px);
             return { w: w + 2 * pad, asc: px * 0.72, desc: px * 0.24, p: [{ k: "t", x: pad, y: 0, s: s, px: px }] };

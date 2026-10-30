@@ -230,6 +230,31 @@ impl Doc {
                 if crate::steps::available(ast) {
                     out["steps"] = json!(true);
                 }
+                // an equation / inequality in one unknown: solve it (and it is still graphed as x = … lines/bands)
+                if let Some((v, rel, p, z)) = crate::algebra::detect(ast, &env) {
+                    let sol = crate::algebra::solve(ast, &v, rel, &p, z);
+                    out["kind"] = json!("solve");
+                    out["value"] = json!(crate::mtree::flat(&sol.answer));
+                    out["m"] = sol.answer;
+                    out["steps"] = json!(true);
+                    return out;
+                }
+                if let Ast::Call(f, args) = ast {
+                    if (f == "expand" || f == "factor") && args.len() == 1 {
+                        match crate::algebra::expand_factor(f, &args[0], &env) {
+                            Some((plain, tree)) => {
+                                out["kind"] = json!("expr");
+                                out["value"] = json!(plain);
+                                out["m"] = tree;
+                            }
+                            None => {
+                                out["kind"] = json!("error");
+                                out["error"] = json!(format!("{f} works on polynomials in one letter (for now)"));
+                            }
+                        }
+                        return out;
+                    }
+                }
                 if let Some((name, params, _)) = split_def(ast) {
                     if !params.is_empty() {
                         out["kind"] = json!("func");

@@ -97,7 +97,7 @@ Item {
 
         // result line
         Row {
-            visible: (row.hasOut && !(row.r.kind === "def" && row.r.vtype === "number" && row.r.value === bareValue())) || !!row.r.steps || !!row.r.lm
+            visible: (row.hasOut && !(row.r.kind === "def" && row.r.vtype === "number" && row.r.value === bareValue())) || !!row.r.steps || !!row.r.lm || !!row.r.d3
             anchors.right: parent.right
             spacing: 10
             function bareValue() { return (row.r.text || "").replace(/^.*=\s*/, "") }
@@ -131,6 +131,14 @@ Item {
                 color: stepsMouse.containsMouse ? theme.alpha(theme.accent, 0.30) : theme.alpha(theme.accent, 0.14)
                 Text { id: stepsText; anchors.centerIn: parent; text: app.tr("steps", "решение"); color: theme.text; font.family: theme.font; font.pixelSize: 12; font.weight: Font.Medium }
                 MouseArea { id: stepsMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: app.openSteps(row.r.id) }
+            }
+            Rectangle {
+                visible: !!row.r.d3
+                anchors.verticalCenter: parent.verticalCenter
+                width: d3Text.implicitWidth + 18; height: 26; radius: 9
+                color: d3Mouse.containsMouse ? theme.alpha(theme.accent, 0.35) : theme.alpha(theme.accent, 0.16)
+                Text { id: d3Text; anchors.centerIn: parent; text: "3D"; color: theme.text; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold }
+                MouseArea { id: d3Mouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: app.view3d = true }
             }
             Rectangle {
                 visible: !!row.r.lm

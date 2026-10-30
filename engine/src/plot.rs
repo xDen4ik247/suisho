@@ -155,6 +155,7 @@ impl Compiler<'_> {
                     "y" => F::Y,
                     "t" if self.param == "t" => F::T,
                     "theta" if self.param == "theta" => F::T,
+                    "z" if self.param == "z" => F::T,
                     "pi" => F::C(std::f64::consts::PI),
                     "e" if !self.env.vars.contains_key("e") => F::C(std::f64::consts::E),
                     "tau" => F::C(std::f64::consts::TAU),
@@ -895,6 +896,9 @@ pub fn plot(rows: &[(u64, u32, Ast, bool)], env: &mut Env, degrees: bool, v: Vie
         if *hidden {
             continue;
         }
+        if is_3d(ast) {
+            continue;
+        }
         let k = match kind_of(ast, env, degrees) {
             Ok(Some(k)) => k,
             Ok(None) => continue,
@@ -1137,4 +1141,119 @@ mod tests {
         assert!(r[2]["path"].as_str().unwrap().matches('M').count() >= 5);
         eprintln!("plot of 8 rows took {ms:.1} ms (debug build)");
     }
+}
+
+// ------------------------------------------------------------------ 3D surfaces
+
+/// z as a function of (x, y) for a row: `z = f(x, y)` or any equation that is linear in z (a plane, …).
+fn surface_of(a: &Ast, env: &mut Env, degrees: bool) -> Result<Option<F>, String> {
+    let core = match a {
+        Ast::Restrict(e, _) => &**e,
+        o => o,
+    };
+    let Ast::Rel(l, ch) = core else { return Ok(None) };
+    if ch.len() != 1 || ch[0].0 != Rel::Eq || !(ast_uses(l, "z") || ast_uses(&ch[0].1, "z")) {
+        return Ok(None);
+    }
+    let no = HashMap::new();
+    let mut cm = Compiler { env, degrees, param: "z" };
+    // the parameter slot carries z
+    let g = F::Sub(Box::new(cm.compile(l, &no)?), Box::new(cm.compile(&ch[0].1, &no)?));
+    let probe = [(0.3, 0.7), (-1.1, 0.4), (2.0, -1.3)];
+    for (x, y) in probe {
+        let (g0, g1, g2) = (g.ev(x, y, 0.0), g.ev(x, y, 1.0), g.ev(x, y, 2.0));
+        if g0.is_finite() && g1.is_finite() && g2.is_finite() && ((g2 - g1) - (g1 - g0)).abs() > 1e-9 * (1.0 + g1.abs()) {
+            return Err("3D: only surfaces z = f(x, y) (equations linear in z) for now".into());
+        }
+    }
+    // z = −G(x, y, 0) / (G(x, y, 1) − G(x, y, 0))
+    let g0 = Box::new(g.clone());
+    Ok(Some(F::Neg(Box::new(F::Div(Box::new(subst_t(&g0, 0.0)), Box::new(F::Sub(Box::new(subst_t(&g0, 1.0)), Box::new(subst_t(&g0, 0.0)))))))))
+}
+
+fn subst_t(f: &F, v: f64) -> F {
+    let b = |x: &F| Box::new(subst_t(x, v));
+    match f {
+        F::T => F::C(v),
+        F::Add(a, c) => F::Add(b(a), b(c)),
+        F::Sub(a, c) => F::Sub(b(a), b(c)),
+        F::Mul(a, c) => F::Mul(b(a), b(c)),
+        F::Div(a, c) => F::Div(b(a), b(c)),
+        F::Pow(a, c) => F::Pow(b(a), b(c)),
+        F::Neg(a) => F::Neg(b(a)),
+        F::Fn(g, a) => F::Fn(*g, b(a)),
+        F::Fn2(g, a, c) => F::Fn2(*g, b(a), b(c)),
+        F::Cmp(r, a, c) => F::Cmp(*r, b(a), b(c)),
+        F::D(a) => F::D(b(a)),
+        F::Restrict(e, cs) => F::Restrict(b(e), cs.iter().map(|c| subst_t(c, v)).collect()),
+        F::Pw(cs, o) => F::Pw(cs.iter().map(|(c, e)| (subst_t(c, v), subst_t(e, v))).collect(), o.as_ref().map(|o| b(o))),
+        o => o.clone(),
+    }
+}
+
+pub fn is_3d(a: &Ast) -> bool {
+    let core = match a {
+        Ast::Restrict(e, _) => &**e,
+        o => o,
+    };
+    matches!(core, Ast::Rel(l, ch) if ch.len() == 1 && (ast_uses(l, "z") || ast_uses(&ch[0].1, "z")))
+}
+
+/// Meshes of every 3D row over [−r, r]² on an n×n grid, in display units (±100 for ±r; y is up).
+pub fn meshes(rows: &[(u64, u32, Ast, bool)], env: &mut Env, degrees: bool, r: f64, n: usize) -> Value {
+    let n = n.clamp(8, 160);
+    let s = 100.0 / r;
+    let mut out = Vec::new();
+    for (id, color, ast, hidden) in rows {
+        if *hidden || !is_3d(ast) {
+            continue;
+        }
+        let f = match surface_of(ast, env, degrees) {
+            Ok(Some(f)) => f,
+            Ok(None) => continue,
+            Err(e) => {
+                out.push(json!({"id": id, "error": e}));
+                continue;
+            }
+        };
+        let z = |x: f64, y: f64| f.ev(x, y, 0.0);
+        let mut pos = Vec::with_capacity((n + 1) * (n + 1) * 3);
+        let mut nrm = Vec::with_capacity((n + 1) * (n + 1) * 3);
+        let mut hgt = Vec::with_capacity((n + 1) * (n + 1));
+        let mut ok = Vec::with_capacity((n + 1) * (n + 1));
+        let h = 2.0 * r / n as f64;
+        for j in 0..=n {
+            for i in 0..=n {
+                let (x, y) = (-r + i as f64 * h, -r + j as f64 * h);
+                let zz = z(x, y);
+                let good = zz.is_finite() && zz.abs() <= 3.0 * r;
+                let zc = if good { zz } else { 0.0 };
+                // normal from central differences: (−z_x, −z_y, 1)
+                let e = h * 0.5;
+                let zx = (z(x + e, y) - z(x - e, y)) / (2.0 * e);
+                let zy = (z(x, y + e) - z(x, y - e)) / (2.0 * e);
+                let (nx, ny, nz) = if zx.is_finite() && zy.is_finite() { (-zx, -zy, 1.0) } else { (0.0, 0.0, 1.0) };
+                let l = (nx * nx + ny * ny + nz * nz).sqrt();
+                // math (x, y, z) → display (x, z, −y)
+                pos.extend([x * s, zc * s, -y * s]);
+                nrm.extend([nx / l, nz / l, -ny / l]);
+                hgt.push(zc);
+                ok.push(good);
+            }
+        }
+        let mut idx = Vec::with_capacity(n * n * 6);
+        let at = |i: usize, j: usize| j * (n + 1) + i;
+        for j in 0..n {
+            for i in 0..n {
+                let (a, b, c, d) = (at(i, j), at(i + 1, j), at(i + 1, j + 1), at(i, j + 1));
+                if ok[a] && ok[b] && ok[c] && ok[d] {
+                    idx.extend([a as u32, b as u32, c as u32, a as u32, c as u32, d as u32]);
+                }
+            }
+        }
+        let (zmin, zmax) = hgt.iter().zip(&ok).filter(|(_, g)| **g).fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), (z, _)| (lo.min(*z), hi.max(*z)));
+        let round = |v: Vec<f64>| v.into_iter().map(|x| (x * 100.0).round() / 100.0).collect::<Vec<_>>();
+        out.push(json!({"id": id, "color": color, "pos": round(pos), "nrm": round(nrm), "h": round(hgt), "idx": idx, "zmin": zmin, "zmax": zmax}));
+    }
+    json!({"surfaces": out, "r": r})
 }

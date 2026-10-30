@@ -114,10 +114,13 @@ ShellRoot {
                 applyDoc(m);
                 if (m.workspaces) workspaces = m.workspaces;
                 graph.request();
+                if (graph3dLoader.item) graph3dLoader.item.request();
             } else if (m.type === "settings") {
                 settings = m.settings; applyDoc(m.doc); graph.request();
             } else if (m.type === "plot") {
                 graph.receive(m);
+            } else if (m.type === "mesh") {
+                if (graph3dLoader.item) graph3dLoader.item.receive(m);
             } else if (m.type === "steps") {
                 if (m.id === stepsFor) { stepsPanel.sol = m.sol; stepsPanel.open = true; }
             } else if (m.type === "ws_list") {
@@ -162,6 +165,7 @@ ShellRoot {
         function showLinmap(m) { stepsPanel.open = false; graph.showLinmap(m); }
         function openSteps(id) { stepsFor = id; send({ cmd: "steps", id: id }); }
         property var stepsFor: null
+        property bool view3d: false
         property var selRow: null           // the row being edited (its points of interest are shown)
         property var plotErrors: ({})       // row id → why it can't be graphed (e.g. "a is not defined")
         function num(v) {
@@ -318,8 +322,33 @@ ShellRoot {
                 Graph2D {
                     id: graph
                     anchors { fill: parent; margins: 1 }
+                    visible: !app.view3d
                     app: shell.appRef
                     theme: shell.themeRef
+                }
+                Loader {
+                    id: graph3dLoader
+                    anchors { fill: parent; margins: 1 }
+                    active: app.view3d
+                    visible: active
+                    sourceComponent: Graph3D { app: shell.appRef; theme: shell.themeRef }
+                }
+                // 2D | 3D switch
+                Row {
+                    anchors { left: parent.left; top: parent.top; margins: 12 }
+                    spacing: 0
+                    z: 4
+                    Repeater {
+                        model: ["2D", "3D"]
+                        Rectangle {
+                            width: 44; height: 28
+                            radius: 8
+                            color: (index === 1) === app.view3d ? theme.alpha(theme.accent, 0.35) : theme.alpha(theme.base, 0.6)
+                            border.width: 1; border.color: theme.alpha(theme.text, 0.12)
+                            Text { anchors.centerIn: parent; text: modelData; color: theme.text; font.family: theme.font; font.pixelSize: 13; font.weight: Font.Medium }
+                            MouseArea { anchors.fill: parent; onClicked: app.view3d = index === 1 }
+                        }
+                    }
                 }
             }
 
@@ -415,6 +444,7 @@ ShellRoot {
         function steps(i: int): void { if (i >= 0 && i < rowModel.count) app.openSteps(rowModel.get(i).rid) }
         function fresh(): void { app.send({ cmd: "ws_new", name: "Test" }) }
         function view(cx: real, cy: real, ppu: real): void { graph.cx = cx; graph.cy = cy; graph.ppu = ppu }
+        function show3d(on: bool): void { app.view3d = on }
         function linmap(i: int, t: real): void { const r = rowModel.get(i).rowData; if (r && r.lm) { graph.showLinmap(r.lm); graph.lt = t; graph.stopAnim(); } }
     }
 }

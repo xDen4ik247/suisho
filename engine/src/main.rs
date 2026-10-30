@@ -162,6 +162,13 @@ impl App {
                 out["view"] = v.clone();
                 out
             }
+            "mesh" => {
+                let rr = r.get("r").and_then(|v| v.as_f64()).unwrap_or(5.0).clamp(1e-3, 1e6);
+                let n = r.get("n").and_then(|v| v.as_u64()).unwrap_or(80) as usize;
+                let mut out = self.doc.mesh(self.opts(), rr, n);
+                out["type"] = json!("mesh");
+                out
+            }
             "steps" => {
                 let id = id.ok_or("steps needs an id")?;
                 let sol = self.doc.solution(id, self.opts())?;

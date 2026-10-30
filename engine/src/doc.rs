@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 /// Letters that make a row a graph instead of an error when they are not defined.
-pub const GRAPH_VARS: &[&str] = &["x", "y", "r", "theta", "t"];
+pub const GRAPH_VARS: &[&str] = &["x", "y", "z", "r", "theta", "t"];
 
 #[derive(Clone)]
 pub struct Row {
@@ -196,6 +196,16 @@ impl Doc {
         crate::plot::plot(&rows, &mut env, o.degrees, v)
     }
 
+    /// Surfaces of the 3D rows.
+    pub fn mesh(&self, o: Opts, r: f64, n: usize) -> Value {
+        let (mut env, parsed, _) = self.prepare(o);
+        let rows: Vec<(u64, u32, Ast, bool)> = self.rows.iter().zip(parsed).filter_map(|(row, p)| match p {
+            Ok(Some(a)) => Some((row.id, row.color, a, row.hidden)),
+            _ => None,
+        }).collect();
+        crate::plot::meshes(&rows, &mut env, o.degrees, r, n)
+    }
+
     /// The step-by-step solution of row `id`.
     pub fn solution(&self, id: u64, o: Opts) -> Result<Value, String> {
         let (mut env, parsed, _) = self.prepare(o);
@@ -322,6 +332,9 @@ impl Doc {
                     }
                     Err(EvalErr::Free(n)) if GRAPH_VARS.contains(&n.as_str()) => {
                         out["kind"] = json!("graph");
+                        if crate::plot::is_3d(ast) {
+                            out["d3"] = json!(true);
+                        }
                         if let Some(c) = crate::geom::conic_coefs(ast, &env) {
                             let k = crate::geom::features(&c).kind;
                             out["conic"] = json!({"en": crate::geom::conic_name(k, false), "ru": crate::geom::conic_name(k, true)});

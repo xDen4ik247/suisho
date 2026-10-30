@@ -53,6 +53,8 @@ Open it with **Mod+=** (or the calculator key) or `suisho`.
   `distance(P, 3x + y - 12 = 0)`, `midpoint(P, Q)`, `triangle(A, B, C)` (sides, perimeter, area, angles, centroid,
   circumcentre, orthocentre, incentre — exact where possible), `plane(A, B, C)`, `dot`, `cross`, `angle` — all with
   steps; lines and triangles are drawn.
+- **3D surfaces**: `z = sin(x) cos(y)`, `z = (x^2 - y^2)/8`, planes like `x + y + z = 6` (anything linear in z):
+  the *3D* switch (or the row's 3D chip) shows them lit and tinted by height; drag to orbit, wheel to zoom.
 - **Grapher** (Desmos-style): `y = f(x)`, `x = g(y)`, any implicit curve `F(x, y) = G(x, y)` (`x² + y² = 9`,
   `sin(xy) = cos y`), inequalities with shading (dashed edge for < >), polar `r = 2cos(3θ)`, parametric
   `(cos t, sin t)` (range from `{0 < t < 1}`), points, restrictions `{x > 0}`, piecewise. Asymptotes are not joined.

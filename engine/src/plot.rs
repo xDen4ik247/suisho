@@ -340,6 +340,7 @@ enum Kind {
     Implicit(F, Rel), // G(x,y) (rel) 0
     Points(Vec<(f64, f64)>),
     Area(F, f64, f64), // ∫ₐᵇ f: the curve on [a, b] and the region down to the x-axis
+    Poly(Vec<(f64, f64)>, bool), // a polyline through points (closed: a polygon)
 }
 
 fn kind_of(a: &Ast, env: &mut Env, degrees: bool) -> Result<Option<Kind>, String> {
@@ -436,6 +437,32 @@ fn kind_of(a: &Ast, env: &mut Env, degrees: bool) -> Result<Option<Kind>, String
         Ast::Call(f, args) if matches!(f.as_str(), "diff" | "derivative") && !args.is_empty() => {
             let mut cm = Compiler { env, degrees, param: "theta" };
             Ok(Some(Kind::Explicit(F::D(Box::new(cm.compile(&args[0], &no)?)), Rel::Eq)))
+        }
+        Ast::Call(f, args) if matches!(f.as_str(), "line" | "triangle" | "midpoint") && args.len() >= 2 => {
+            let mut pts = Vec::new();
+            for a in args {
+                match env.eval(a, &HashMap::new()) {
+                    Ok(Val::Tuple(p)) if p.len() == 2 => {
+                        if let (Val::N(x), Val::N(y)) = (&p[0], &p[1]) {
+                            pts.push((x.to_f64(), y.to_f64()));
+                        }
+                    }
+                    _ => return Ok(None),
+                }
+            }
+            if f == "line" && pts.len() == 2 {
+                // extend the segment across the view
+                let ((x1, y1), (x2, y2)) = (pts[0], pts[1]);
+                let (dx, dy) = (x2 - x1, y2 - y1);
+                let n = (dx * dx + dy * dy).sqrt().max(1e-300);
+                let big = 1e3 * (1.0 + x1.abs() + y1.abs());
+                return Ok(Some(Kind::Poly(vec![(x1 - big * dx / n, y1 - big * dy / n), (x1 + big * dx / n, y1 + big * dy / n)], false)));
+            }
+            if f == "midpoint" {
+                let m = ((pts[0].0 + pts[1].0) / 2.0, (pts[0].1 + pts[1].1) / 2.0);
+                return Ok(Some(Kind::Points(vec![m])));
+            }
+            Ok(Some(Kind::Poly(pts, true)))
         }
         Ast::Call(f, args) if matches!(f.as_str(), "analyze" | "investigate") && args.len() == 1 => {
             let mut cm = Compiler { env, degrees, param: "theta" };
@@ -1019,6 +1046,19 @@ pub fn plot(rows: &[(u64, u32, Ast, bool)], env: &mut Env, degrees: bool, v: Vie
                 r["path"] = json!(lines_to_path_band(&lines, -1.5 * v.h, 2.5 * v.h));
                 r["fill"] = json!(s);
                 r["area"] = json!(crate::calc::simpson(&fx, a, b));
+            }
+            Kind::Poly(pts, closed) => {
+                use std::fmt::Write;
+                let mut d = String::new();
+                for (i, p) in pts.iter().enumerate() {
+                    let _ = write!(d, "{}{:.1} {:.1}", if i == 0 { "M" } else { "L" }, v.px(p.0), v.py(p.1));
+                }
+                if closed {
+                    d.push('Z');
+                    r["fill"] = json!(d.clone());
+                    r["points"] = json!(pts.iter().map(|p| json!([v.px(p.0), v.py(p.1), clean(p.0), clean(p.1)])).collect::<Vec<_>>());
+                }
+                r["path"] = json!(d);
             }
             Kind::Points(pts) => {
                 r["points"] = json!(pts.iter().filter(|p| p.0.is_finite() && p.1.is_finite()).map(|p| json!([v.px(p.0), v.py(p.1), clean(p.0), clean(p.1)])).collect::<Vec<_>>());

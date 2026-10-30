@@ -419,6 +419,23 @@ mod tests {
         conic_coefs(&parse(src, &HashSet::new()).unwrap().unwrap(), &Env::default()).unwrap()
     }
 
+    fn con(src: &str) -> Solution {
+        let a = parse(src, &HashSet::new()).unwrap().unwrap();
+        construct(&a, &mut Env::default()).unwrap().unwrap()
+    }
+
+    #[test]
+    fn constructions() {
+        assert_eq!(crate::mtree::flat(&con("line((1,2),(3,6))").answer), "2x−y=0");
+        assert_eq!(crate::mtree::flat(&con("distance((0,0),(3,4))").answer), "5");
+        assert_eq!(crate::mtree::flat(&con("distance((1,1),(2,2))").answer), "√2");
+        assert_eq!(crate::mtree::flat(&con("distance((0,0), 3x + 4y - 10 = 0)").answer), "2");
+        assert_eq!(crate::mtree::flat(&con("cross((1,0,0),(0,1,0))").answer), "(0, 0, 1)");
+        assert_eq!(crate::mtree::flat(&con("plane((1,0,0),(0,1,0),(0,0,1))").answer), "x+y+z−1=0");
+        let tri = crate::mtree::flat(&con("triangle((0,0),(4,0),(0,3))").answer);
+        assert!(tri.starts_with("S = 6,  P = 12"), "{tri}");
+    }
+
     #[test]
     fn classify() {
         assert_eq!(features(&c("x^2 + 4y^2 - 2x + 16y + 1 = 0")).kind, "ellipse");
@@ -437,4 +454,279 @@ mod tests {
         let s = conic_solution(&parse("x^2 + 4y^2 - 2x + 16y + 1 = 0", &HashSet::new()).unwrap().unwrap(), &c("x^2 + 4y^2 - 2x + 16y + 1 = 0"));
         assert!(crate::mtree::flat(&s.answer).starts_with("ellipse, centre (1; −2), a = 4, b = 2"), "{}", crate::mtree::flat(&s.answer));
     }
+}
+
+// ------------------------------------------------------------------ constructions with points and vectors
+
+fn point(a: &Ast, env: &mut Env) -> Result<Vec<Q>, String> {
+    match env.eval(a, &HashMap::new()) {
+        Ok(Val::Tuple(v)) | Ok(Val::List(v)) => v
+            .iter()
+            .map(|x| match x {
+                Val::N(crate::num::Num::Q(r)) => Ok(r.clone()),
+                Val::N(n) => Q::from_float(n.to_f64()).ok_or_else(|| "not a number".to_string()),
+                _ => Err("a point/vector has number coordinates".to_string()),
+            })
+            .collect(),
+        Ok(_) => Err("expected a point like (1, 2)".into()),
+        Err(crate::eval::EvalErr::Free(n)) => Err(format!("{n} is not defined")),
+        Err(crate::eval::EvalErr::Msg(m)) => Err(m),
+    }
+}
+
+fn pt(p: &[Q]) -> Value {
+    let mut c = Vec::new();
+    for (i, x) in p.iter().enumerate() {
+        if i > 0 {
+            c.push(json!({"k": "t", "s": ", ", "ru": "; "}));
+        }
+        c.push(rat(x));
+    }
+    par(row(c))
+}
+
+fn sqrt_e(r: &Q) -> E {
+    sym::simplify(&E::Pow(Box::new(E::Q(r.clone())), Box::new(qr(1, 2))))
+}
+
+fn dist2(p: &[Q], q_: &[Q]) -> Q {
+    p.iter().zip(q_).map(|(a, b)| (b - a) * (b - a)).sum()
+}
+
+/// integer coefficients a·x + b·y + c (scaled by the lcm of denominators, divided by the gcd)
+fn int_line(v: &[Q]) -> Vec<Q> {
+    use num_integer::Integer;
+    let l = v.iter().fold(num_bigint::BigInt::one(), |acc, x| acc.lcm(x.denom()));
+    let iv: Vec<num_bigint::BigInt> = v.iter().map(|x| (x * Q::from_integer(l.clone())).to_integer()).collect();
+    let g = iv.iter().fold(num_bigint::BigInt::zero(), |acc, x| acc.gcd(x));
+    let g = if g.is_zero() { num_bigint::BigInt::one() } else { g };
+    // a positive leading coefficient
+    let sgn = if iv.iter().find(|x| !x.is_zero()).is_some_and(|x| x.is_negative()) { -1 } else { 1 };
+    iv.iter().map(|x| Q::from_integer(x / &g * sgn)).collect()
+}
+
+/// a·x + b·y (+ c·z) + d = 0 as a tree
+fn general(coefs: &[Q], vars: &[&str]) -> Value {
+    let mut c = Vec::new();
+    for (i, k) in coefs.iter().enumerate() {
+        if k.is_zero() {
+            continue;
+        }
+        if c.is_empty() {
+            if k.is_negative() {
+                c.push(t("−"));
+            }
+        } else {
+            c.push(op(if k.is_negative() { "−" } else { "+" }));
+        }
+        let m = k.abs();
+        if i < vars.len() {
+            if !m.is_one() {
+                c.push(rat(&m));
+            }
+            c.push(var(vars[i]));
+        } else {
+            c.push(rat(&m));
+        }
+    }
+    if c.is_empty() {
+        c.push(t("0"));
+    }
+    c.extend([op("="), t("0")]);
+    row(c)
+}
+
+/// Linear equation in x, y (and z) → coefficients [a, b, (c,) d] of a·x + b·y + (c·z) + d = 0.
+fn linear_eq(a: &Ast, env: &Env, vars: &[&str]) -> Option<Vec<Q>> {
+    let Ast::Rel(l, ch) = a else { return None };
+    if ch.len() != 1 || ch[0].0 != Rel::Eq {
+        return None;
+    }
+    // reuse the bivariate reader for x, y; z via substitution trick is not needed for 2D
+    if vars.len() == 2 {
+        let (pl, pr) = (bi(l, env)?, bi(&ch[0].1, env)?);
+        let g = |k: (u8, u8)| pl.get(&k).cloned().unwrap_or_else(Q::zero) - pr.get(&k).cloned().unwrap_or_else(Q::zero);
+        if !(g((2, 0)).is_zero() && g((1, 1)).is_zero() && g((0, 2)).is_zero()) {
+            return None;
+        }
+        return Some(vec![g((1, 0)), g((0, 1)), g((0, 0))]);
+    }
+    None
+}
+
+pub fn construct(a: &Ast, env: &mut Env) -> Option<Result<Solution, String>> {
+    let Ast::Call(f, args) = a else { return None };
+    let f = f.as_str();
+    if !matches!(f, "line" | "distance" | "midpoint" | "triangle" | "plane" | "dot" | "cross" | "angle") {
+        return None;
+    }
+    let problem = ast(a);
+    Some((|| -> Result<Solution, String> {
+        let sol = |en: &str, ru: &str, steps, answer| Solution { en: en.into(), ru: ru.into(), problem: problem.clone(), steps, answer, verified: true };
+        match (f, args.len()) {
+            ("line", 2) => {
+                let (p, q_) = (point(&args[0], env)?, point(&args[1], env)?);
+                if p.len() != 2 || q_.len() != 2 || p == q_ {
+                    return Err("line(P, Q) needs two different points in the plane".into());
+                }
+                let (dx, dy) = (q_[0].clone() - p[0].clone(), q_[1].clone() - p[1].clone());
+                let co = int_line(&[dy.clone(), -dx.clone(), dx.clone() * p[1].clone() - dy.clone() * p[0].clone()]);
+                let mut st = vec![step("Line through two points: (x − x₁)/(x₂ − x₁) = (y − y₁)/(y₂ − y₁).", "Прямая через две точки: (x − x₁)/(x₂ − x₁) = (y − y₁)/(y₂ − y₁).")
+                    .m(row(vec![frac(shifted("x", &p[0]), rat(&dx)), op("="), frac(shifted("y", &p[1]), rat(&dy))]))];
+                st.push(step("Cross-multiply and collect: the general equation ax + by + c = 0.", "Перемножаем крест-накрест и приводим: общее уравнение ax + by + c = 0.").m(general(&co, &["x", "y"])));
+                if !co[1].is_zero() {
+                    let k = -co[0].clone() / co[1].clone();
+                    let m = -co[2].clone() / co[1].clone();
+                    st.push(step("Slope form y = kx + m (k is the slope):", "Уравнение с угловым коэффициентом y = kx + m:")
+                        .m(row(vec![var("y"), op("="), crate::algebra::poly_tree(&crate::poly::Poly { c: vec![m, k] }, "x")])));
+                }
+                Ok(sol("Line through two points", "Прямая через две точки", st, general(&co, &["x", "y"])))
+            }
+            ("distance", 2) => {
+                let p = point(&args[0], env)?;
+                if let Ok(q_) = point(&args[1], env) {
+                    if p.len() != q_.len() {
+                        return Err("the points have different dimensions".into());
+                    }
+                    let d2 = dist2(&p, &q_);
+                    let d = sqrt_e(&d2);
+                    let mut sum = Vec::new();
+                    for (i, (a_, b_)) in p.iter().zip(&q_).enumerate() {
+                        if i > 0 {
+                            sum.push(op("+"));
+                        }
+                        sum.push(sq(par(row(vec![rat(b_), op("−"), crate::mtree::num_p(&crate::num::Num::Q(a_.clone()))]))));
+                    }
+                    let st = vec![step("Distance between points: d = √(Σ(qᵢ − pᵢ)²).", "Расстояние между точками: d = √(Σ(qᵢ − pᵢ)²).")
+                        .m(row(vec![var("d"), op("="), sqrt(row(sum), None), op("="), sqrt(rat(&d2), None), op("="), sym_t(&d)]))];
+                    return Ok(sol("Distance", "Расстояние", st, sym_t(&d)));
+                }
+                // point to a line a·x + b·y + c = 0
+                let co = linear_eq(&args[1], env, &["x", "y"]).ok_or("distance(P, Q) or distance(P, ax + by + c = 0)")?;
+                if p.len() != 2 {
+                    return Err("a point in the plane".into());
+                }
+                let num = co[0].clone() * p[0].clone() + co[1].clone() * p[1].clone() + co[2].clone();
+                let den2 = co[0].clone() * co[0].clone() + co[1].clone() * co[1].clone();
+                let d = sym::simplify(&E::Mul(vec![E::Q(num.abs()), E::Pow(Box::new(E::Q(den2.clone())), Box::new(qr(-1, 2)))]));
+                let st = vec![step("Distance from a point to a line: d = |a·x₀ + b·y₀ + c| / √(a² + b²).", "Расстояние от точки до прямой: d = |a·x₀ + b·y₀ + c| / √(a² + b²).")
+                    .m(row(vec![var("d"), op("="), frac(bars(rat(&num)), sqrt(rat(&den2), None)), op("="), sym_t(&d)]))];
+                Ok(sol("Distance from a point to a line", "Расстояние от точки до прямой", st, sym_t(&d)))
+            }
+            ("midpoint", 2) => {
+                let (p, q_) = (point(&args[0], env)?, point(&args[1], env)?);
+                let m: Vec<Q> = p.iter().zip(&q_).map(|(a_, b_)| (a_ + b_) / Q::from_integer(2.into())).collect();
+                let st = vec![step("Midpoint: the average of the coordinates.", "Середина отрезка: полусумма координат.").m(row(vec![var("M"), op("="), pt(&m)]))];
+                Ok(sol("Midpoint", "Середина отрезка", st, pt(&m)))
+            }
+            ("dot" | "angle", 2) => {
+                let (u, w) = (point(&args[0], env)?, point(&args[1], env)?);
+                if u.len() != w.len() {
+                    return Err("vectors of the same dimension".into());
+                }
+                let d: Q = u.iter().zip(&w).map(|(a_, b_)| a_ * b_).sum();
+                let mut terms = Vec::new();
+                for (i, (a_, b_)) in u.iter().zip(&w).enumerate() {
+                    if i > 0 {
+                        terms.push(op("+"));
+                    }
+                    terms.extend([crate::mtree::num_p(&crate::num::Num::Q(a_.clone())), op("·"), crate::mtree::num_p(&crate::num::Num::Q(b_.clone()))]);
+                }
+                let mut st = vec![step("Dot product: the sum of the products of the coordinates.", "Скалярное произведение: сумма произведений координат.")
+                    .m(row([vec![t("a·b"), op("=")], terms, vec![op("="), rat(&d)]].concat()))];
+                if f == "dot" {
+                    return Ok(sol("Dot product", "Скалярное произведение", st, rat(&d)));
+                }
+                let (n1, n2) = (u.iter().map(|x| x * x).sum::<Q>(), w.iter().map(|x| x * x).sum::<Q>());
+                let cosv = sym::simplify(&E::Mul(vec![E::Q(d.clone()), E::Pow(Box::new(E::Q(n1.clone() * n2.clone())), Box::new(qr(-1, 2)))]));
+                let deg = cosv.to_f64().clamp(-1.0, 1.0).acos().to_degrees();
+                st.push(step("cos φ = a·b / (|a|·|b|).", "cos φ = a·b / (|a|·|b|).")
+                    .m(row(vec![t("cos φ"), op("="), frac(rat(&d), row(vec![sqrt(rat(&n1), None), op("·"), sqrt(rat(&n2), None)])), op("="), sym_t(&cosv)]))
+                    .m(row(vec![t("φ ≈ "), t(&format!("{:.4}°", deg))])));
+                Ok(sol("Angle between vectors", "Угол между векторами", st, row(vec![t("cos φ = "), sym_t(&cosv), t(&format!(",  φ ≈ {:.4}°", deg))])))
+            }
+            ("cross", 2) => {
+                let (u, w) = (point(&args[0], env)?, point(&args[1], env)?);
+                if u.len() != 3 || w.len() != 3 {
+                    return Err("the cross product is for 3D vectors".into());
+                }
+                let c = vec![u[1].clone() * w[2].clone() - u[2].clone() * w[1].clone(), u[2].clone() * w[0].clone() - u[0].clone() * w[2].clone(), u[0].clone() * w[1].clone() - u[1].clone() * w[0].clone()];
+                let det = json!({"k": "mat", "o": "|", "r": [[t("i"), t("j"), t("k")], u.iter().map(rat).collect::<Vec<_>>(), w.iter().map(rat).collect::<Vec<_>>()]});
+                let st = vec![step("Cross product: expand the determinant with i, j, k along the first row.", "Векторное произведение: раскрываем определитель с i, j, k по первой строке.")
+                    .m(row(vec![t("a × b"), op("="), det, op("="), pt(&c)]))];
+                Ok(sol("Cross product", "Векторное произведение", st, pt(&c)))
+            }
+            ("plane", 3) => {
+                let (p, q_, r) = (point(&args[0], env)?, point(&args[1], env)?, point(&args[2], env)?);
+                if p.len() != 3 || q_.len() != 3 || r.len() != 3 {
+                    return Err("plane(A, B, C) needs three points in space".into());
+                }
+                let u: Vec<Q> = q_.iter().zip(&p).map(|(a_, b_)| a_ - b_).collect();
+                let w: Vec<Q> = r.iter().zip(&p).map(|(a_, b_)| a_ - b_).collect();
+                let n = vec![u[1].clone() * w[2].clone() - u[2].clone() * w[1].clone(), u[2].clone() * w[0].clone() - u[0].clone() * w[2].clone(), u[0].clone() * w[1].clone() - u[1].clone() * w[0].clone()];
+                if n.iter().all(|x| x.is_zero()) {
+                    return Err("the three points are on one line".into());
+                }
+                let d = -(n[0].clone() * p[0].clone() + n[1].clone() * p[1].clone() + n[2].clone() * p[2].clone());
+                let co = int_line(&[n[0].clone(), n[1].clone(), n[2].clone(), d]);
+                let st = vec![
+                    step("Two vectors in the plane: AB and AC.", "Два вектора в плоскости: AB и AC.").m(row(vec![t("AB = "), pt(&u), t(",   AC = "), pt(&w)])),
+                    step("The normal vector is their cross product n = AB × AC.", "Нормальный вектор — их векторное произведение n = AB × AC.").m(row(vec![var("n"), op("="), pt(&n)])),
+                    step("The plane: n·(X − A) = 0, i.e. a(x − x₀) + b(y − y₀) + c(z − z₀) = 0.", "Плоскость: n·(X − A) = 0, то есть a(x − x₀) + b(y − y₀) + c(z − z₀) = 0.").m(general(&co, &["x", "y", "z"])),
+                ];
+                Ok(sol("Plane through three points", "Плоскость через три точки", st, general(&co, &["x", "y", "z"])))
+            }
+            ("triangle", 3) => {
+                let (pa, pb, pc) = (point(&args[0], env)?, point(&args[1], env)?, point(&args[2], env)?);
+                if pa.len() != 2 || pb.len() != 2 || pc.len() != 2 {
+                    return Err("triangle(A, B, C) needs three points in the plane".into());
+                }
+                let two = Q::from_integer(2.into());
+                let cross = (pb[0].clone() - pa[0].clone()) * (pc[1].clone() - pa[1].clone()) - (pb[1].clone() - pa[1].clone()) * (pc[0].clone() - pa[0].clone());
+                if cross.is_zero() {
+                    return Err("the points are on one line (a degenerate triangle)".into());
+                }
+                let area = cross.abs() / two.clone();
+                let (a2, b2, c2) = (dist2(&pb, &pc), dist2(&pa, &pc), dist2(&pa, &pb));
+                let (a_, b_, c_) = (sqrt_e(&a2), sqrt_e(&b2), sqrt_e(&c2));
+                let per = sym::simplify(&E::Add(vec![a_.clone(), b_.clone(), c_.clone()]));
+                let g: Vec<Q> = (0..2).map(|i| (pa[i].clone() + pb[i].clone() + pc[i].clone()) / Q::from_integer(3.into())).collect();
+                // circumcentre: equidistant from A, B, C (two linear equations)
+                let (ax, ay, bx, by, cx, cy) = (pa[0].clone(), pa[1].clone(), pb[0].clone(), pb[1].clone(), pc[0].clone(), pc[1].clone());
+                let dd = two.clone() * (ax.clone() * (by.clone() - cy.clone()) + bx.clone() * (cy.clone() - ay.clone()) + cx.clone() * (ay.clone() - by.clone()));
+                let sa = ax.clone() * ax.clone() + ay.clone() * ay.clone();
+                let sb = bx.clone() * bx.clone() + by.clone() * by.clone();
+                let sc = cx.clone() * cx.clone() + cy.clone() * cy.clone();
+                let ox = (sa.clone() * (by.clone() - cy.clone()) + sb.clone() * (cy.clone() - ay.clone()) + sc.clone() * (ay.clone() - by.clone())) / dd.clone();
+                let oy = (sa * (cx.clone() - bx.clone()) + sb * (ax.clone() - cx.clone()) + sc * (bx.clone() - ax.clone())) / dd;
+                let o = vec![ox, oy];
+                let h: Vec<Q> = (0..2).map(|i| pa[i].clone() + pb[i].clone() + pc[i].clone() - two.clone() * o[i].clone()).collect();
+                let rr = sqrt_e(&dist2(&o, &pa));
+                let ang = |opp2: &Q, s1: &Q, s2: &Q| -> f64 {
+                    let (o_, x1, x2) = (opp2.to_f64().unwrap(), s1.to_f64().unwrap(), s2.to_f64().unwrap());
+                    ((x1 + x2 - o_) / (2.0 * x1.sqrt() * x2.sqrt())).clamp(-1.0, 1.0).acos().to_degrees()
+                };
+                let (aa, ab, ac) = (ang(&a2, &b2, &c2), ang(&b2, &a2, &c2), ang(&c2, &a2, &b2));
+                let (af, bf, cf) = (a_.to_f64(), b_.to_f64(), c_.to_f64());
+                let ps = af + bf + cf;
+                let inc = ((af * ax.to_f64().unwrap() + bf * bx.to_f64().unwrap() + cf * cx.to_f64().unwrap()) / ps, (af * ay.to_f64().unwrap() + bf * by.to_f64().unwrap() + cf * cy.to_f64().unwrap()) / ps);
+                let st = vec![
+                    step("Sides (distances between the vertices): a = BC, b = AC, c = AB.", "Стороны (расстояния между вершинами): a = BC, b = AC, c = AB.")
+                        .m(row(vec![var("a"), op("="), sym_t(&a_), t(",   "), var("b"), op("="), sym_t(&b_), t(",   "), var("c"), op("="), sym_t(&c_), t(",   P = "), sym_t(&per)])),
+                    step("Area: S = ½·|(x_B − x_A)(y_C − y_A) − (y_B − y_A)(x_C − x_A)|.", "Площадь: S = ½·|(x_B − x_A)(y_C − y_A) − (y_B − y_A)(x_C − x_A)|.")
+                        .m(row(vec![var("S"), op("="), frac(t("1"), t("2")), op("·"), bars(rat(&cross)), op("="), rat(&area)])),
+                    step("Angles by the law of cosines: cos A = (b² + c² − a²)/(2bc).", "Углы по теореме косинусов: cos A = (b² + c² − a²)/(2bc).")
+                        .m(t(&format!("A ≈ {aa:.4}°,   B ≈ {ab:.4}°,   C ≈ {ac:.4}°   (sum 180°)"))),
+                    step("Centroid (medians meet): the average of the vertices.", "Центр масс (точка пересечения медиан): среднее вершин.").m(row(vec![var("G"), op("="), pt(&g)])),
+                    step("Circumcentre (perpendicular bisectors meet): equidistant from A, B, C; R = |OA|.", "Центр описанной окружности (пересечение серединных перпендикуляров): равноудалён от вершин; R = |OA|.")
+                        .m(row(vec![var("O"), op("="), pt(&o), t(",   R = "), sym_t(&rr)])),
+                    step("Orthocentre (altitudes meet): H = A + B + C − 2O.", "Ортоцентр (пересечение высот): H = A + B + C − 2O.").m(row(vec![var("H"), op("="), pt(&h)])),
+                    step("Incentre (bisectors meet): (a·A + b·B + c·C)/(a + b + c); r = S/p.", "Центр вписанной окружности (пересечение биссектрис): (a·A + b·B + c·C)/(a + b + c); r = S/p.")
+                        .m(t(&format!("I ≈ ({:.5}; {:.5}),   r ≈ {:.5}", inc.0, inc.1, area.to_f64().unwrap() / (ps / 2.0)))),
+                ];
+                Ok(sol("Triangle", "Треугольник", st, row(vec![t("S = "), rat(&area), t(",  P = "), sym_t(&per), t(",  G = "), pt(&g), t(",  O = "), pt(&o)])))
+            }
+            _ => Err(format!("{f}: wrong number of arguments")),
+        }
+    })())
 }

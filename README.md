@@ -49,6 +49,10 @@ Open it with **Mod+=** (or the calculator key) or `suisho`.
   `5x^2 + 4xy + 8y^2 = 36`): the row names the curve, *steps* reduces it to canonical form — invariants δ, Δ, S,
   completing the squares (exact semi-axes, c, eccentricity) or a rotation by tg 2θ = B/(A − C) — and the graph
   shows the foci and the directrices/asymptotes.
+- **Points, lines, triangles, vectors**: `line(P, Q)` (two-point form → general → slope form), `distance(P, Q)`,
+  `distance(P, 3x + y - 12 = 0)`, `midpoint(P, Q)`, `triangle(A, B, C)` (sides, perimeter, area, angles, centroid,
+  circumcentre, orthocentre, incentre — exact where possible), `plane(A, B, C)`, `dot`, `cross`, `angle` — all with
+  steps; lines and triangles are drawn.
 - **Grapher** (Desmos-style): `y = f(x)`, `x = g(y)`, any implicit curve `F(x, y) = G(x, y)` (`x² + y² = 9`,
   `sin(xy) = cos y`), inequalities with shading (dashed edge for < >), polar `r = 2cos(3θ)`, parametric
   `(cos t, sin t)` (range from `{0 < t < 1}`), points, restrictions `{x > 0}`, piecewise. Asymptotes are not joined.

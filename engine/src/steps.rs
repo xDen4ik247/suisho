@@ -73,6 +73,7 @@ pub fn available(a: &Ast) -> bool {
     match a {
         Ast::Call(f, args) if args.len() == 1 && matches!(f.as_str(), "det" | "inv" | "rref" | "rank" | "sqrt" | "eig" | "eigenvalues") => true,
         Ast::Call(f, args) if f == "solve" && !args.is_empty() => true,
+        Ast::Call(f, _) if matches!(f.as_str(), "line" | "distance" | "midpoint" | "triangle" | "plane" | "dot" | "cross" | "angle") => true,
         Ast::Call(f, args) if matches!(f.as_str(), "diff" | "derivative" | "integrate" | "int" | "lim" | "limit" | "analyze" | "investigate") && !args.is_empty() => true,
         Ast::Call(f, args) if f == "root" && args.len() == 2 => true,
         Ast::Pow(_, e) => matches!(&**e, Ast::Neg(x) if **x == Ast::Num("1".into())),
@@ -95,6 +96,9 @@ pub fn solve(a: &Ast, env: &mut Env) -> Result<Solution, String> {
         return Ok(crate::algebra::solve(a, &v, rel, &p, z));
     }
     if let Some(r) = crate::calc::solve_call(rhs(a), env.degrees) {
+        return r;
+    }
+    if let Some(r) = crate::geom::construct(rhs(a), env) {
         return r;
     }
     if let Some(c) = crate::geom::conic_coefs(a, env) {

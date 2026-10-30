@@ -96,7 +96,7 @@ Item {
 
         // result line
         Row {
-            visible: row.hasOut && !(row.r.kind === "def" && row.r.vtype === "number" && row.r.value === bareValue())
+            visible: (row.hasOut && !(row.r.kind === "def" && row.r.vtype === "number" && row.r.value === bareValue())) || !!row.r.steps
             anchors.right: parent.right
             spacing: 10
             function bareValue() { return (row.r.text || "").replace(/^.*=\s*/, "") }
@@ -122,6 +122,14 @@ Item {
                 color: row.r.value === "true" ? theme.good : theme.bad
                 font.family: theme.font; font.pixelSize: 15
             }
+            Rectangle {
+                visible: !!row.r.steps && row.r.kind !== "error"
+                anchors.verticalCenter: parent.verticalCenter
+                width: stepsText.implicitWidth + 18; height: 26; radius: 9
+                color: stepsMouse.containsMouse ? theme.alpha(theme.accent, 0.30) : theme.alpha(theme.accent, 0.14)
+                Text { id: stepsText; anchors.centerIn: parent; text: app.tr("steps", "решение"); color: theme.text; font.family: theme.font; font.pixelSize: 12; font.weight: Font.Medium }
+                MouseArea { id: stepsMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: app.openSteps(row.r.id) }
+            }
             // value box
             Rectangle {
                 visible: (row.r.kind === "expr" || row.r.kind === "def") && row.r.value !== undefined
@@ -134,50 +142,26 @@ Item {
                     anchors.centerIn: parent
                     spacing: 10
                     Text {
-                        visible: row.r.vtype !== "matrix"
-                        text: "= " + app.pretty(row.r.value || "")
+                        text: "="
                         color: theme.text
                         font.family: theme.mathOut; font.pixelSize: 18
                         anchors.verticalCenter: parent.verticalCenter
                     }
-                    Row {
-                        visible: row.r.vtype === "matrix"
-                        spacing: 6
+                    MathView {
+                        visible: !!row.r.m
+                        tree: row.r.m || null
+                        size: 19
+                        color: theme.text
+                        accent: theme.accent
+                        family: theme.mathOut
                         anchors.verticalCenter: parent.verticalCenter
-                        Text { text: "="; color: theme.text; font.family: theme.mathOut; font.pixelSize: 18; anchors.verticalCenter: parent.verticalCenter }
-                        Item {
-                            width: grid.implicitWidth + 14
-                            height: grid.implicitHeight + 6
-                            anchors.verticalCenter: parent.verticalCenter
-                            // brackets
-                            Repeater {
-                                model: 2
-                                Item {
-                                    x: index === 0 ? 0 : parent.width - 5
-                                    width: 5; height: parent.height
-                                    Rectangle { x: index === 0 ? 0 : 3; width: 1.6; height: parent.height; color: theme.text }
-                                    Rectangle { width: 5; height: 1.6; color: theme.text }
-                                    Rectangle { width: 5; height: 1.6; y: parent.height - 1.6; color: theme.text }
-                                }
-                            }
-                            Grid {
-                                id: grid
-                                anchors.centerIn: parent
-                                columns: row.r.shape ? row.r.shape[1] : 1
-                                columnSpacing: 14
-                                rowSpacing: 3
-                                Repeater {
-                                    model: row.r.cells ? [].concat.apply([], row.r.cells) : []
-                                    Text {
-                                        text: app.pretty(modelData)
-                                        color: theme.text
-                                        horizontalAlignment: Text.AlignHCenter
-                                        width: Math.max(implicitWidth, 18)
-                                        font.family: theme.mathOut; font.pixelSize: 16
-                                    }
-                                }
-                            }
-                        }
+                    }
+                    Text {
+                        visible: !row.r.m
+                        text: app.pretty(row.r.value || "")
+                        color: theme.text
+                        font.family: theme.mathOut; font.pixelSize: 18
+                        anchors.verticalCenter: parent.verticalCenter
                     }
                     Text {
                         visible: !!row.r.approx

@@ -127,8 +127,9 @@ impl Doc {
         }
     }
 
-    /// Evaluate every row; returns the rows as JSON for the window.
-    pub fn compute(&self, o: Opts) -> Value {
+    /// The environment (all definitions) and every row parsed.
+    #[allow(clippy::type_complexity)]
+    fn prepare(&self, o: Opts) -> (Env, Vec<Result<Option<Ast>, String>>, HashMap<usize, EvalErr>) {
         let mut env = Env { degrees: o.degrees, ..Default::default() };
         // pass 1: user function names (so f(x) parses as a call) and parse everything
         let mut funcs = HashSet::new();
@@ -177,6 +178,20 @@ impl Doc {
                 break;
             }
         }
+        (env, parsed, def_err)
+    }
+
+    /// The step-by-step solution of row `id`.
+    pub fn solution(&self, id: u64, o: Opts) -> Result<Value, String> {
+        let (mut env, parsed, _) = self.prepare(o);
+        let i = self.rows.iter().position(|r| r.id == id).ok_or("no such row")?;
+        let ast = parsed[i].clone()?.ok_or("the row is empty")?;
+        Ok(crate::steps::solve(&ast, &mut env)?.json())
+    }
+
+    /// Evaluate every row; returns the rows as JSON for the window.
+    pub fn compute(&self, o: Opts) -> Value {
+        let (mut env, parsed, def_err) = self.prepare(o);
         // pass 3: one result per row
         let rows: Vec<Value> = self
             .rows
@@ -197,6 +212,9 @@ impl Doc {
                     }
                     Ok(Some(a)) => a,
                 };
+                if crate::steps::available(ast) {
+                    out["steps"] = json!(true);
+                }
                 if let Some((name, params, _)) = split_def(ast) {
                     if !params.is_empty() {
                         out["kind"] = json!("func");
@@ -221,6 +239,7 @@ impl Doc {
                     if x.is_finite() {
                         out["kind"] = json!("expr");
                         out["value"] = json!(crate::sym::plain(&e));
+                        out["m"] = crate::mtree::sym(&e);
                         if !matches!(e.is_q(), Some(r) if r.is_integer()) {
                             out["approx"] = json!(crate::num::fmt_float(x, o.digits));
                         }
@@ -289,6 +308,7 @@ impl Doc {
 
 fn fill_value(out: &mut Value, v: &Val, digits: usize) {
     out["value"] = json!(plain(v, digits));
+    out["m"] = crate::mtree::val(v);
     if let Some(a) = approx(v, digits) {
         out["approx"] = json!(a);
     }

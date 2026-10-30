@@ -111,6 +111,8 @@ ShellRoot {
                 if (m.workspaces) workspaces = m.workspaces;
             } else if (m.type === "settings") {
                 settings = m.settings; applyDoc(m.doc);
+            } else if (m.type === "steps") {
+                if (m.id === stepsFor) { stepsPanel.sol = m.sol; stepsPanel.open = true; }
             } else if (m.type === "ws_list") {
                 workspaces = m.workspaces;
             } else if (m.type === "error") {
@@ -150,6 +152,8 @@ ShellRoot {
             const it = list.itemAtIndex(i);
             if (it) it.input.forceActiveFocus();
         }
+        function openSteps(id) { stepsFor = id; send({ cmd: "steps", id: id }); }
+        property var stepsFor: null
         function setSetting(k, v) { const s = {}; s[k] = v; send({ cmd: "settings_set", set: s }); }
         function showToast(t) { toast = t; toastTimer.restart(); }
         function close() { closing = true; send({ cmd: "quit" }); Qt.callLater(Qt.quit); }
@@ -201,7 +205,7 @@ ShellRoot {
             Shortcut { sequences: ["Ctrl+L"]; onActivated: app.setSetting("lang", app.ru ? "en" : "ru") }
             Shortcut { sequences: ["Ctrl+D"]; onActivated: app.setSetting("angle", app.settings.angle === "deg" ? "rad" : "deg") }
             Shortcut { sequences: ["Ctrl+Shift+Z"]; onActivated: app.send({ cmd: "redo" }) }
-            Shortcut { sequences: ["Escape"]; enabled: wsPanel.open; onActivated: wsPanel.open = false }
+            Shortcut { sequences: ["Escape"]; enabled: wsPanel.open || stepsPanel.open; onActivated: { if (wsPanel.open) wsPanel.open = false; else stepsPanel.open = false; } }
 
             // ---------------------------------------------------------- header
             Item {
@@ -331,6 +335,14 @@ ShellRoot {
                 }
             }
 
+            StepsPanel {
+                id: stepsPanel
+                theme: shell.themeRef
+                app: shell.appRef
+                anchors.fill: graphPanel
+                z: 5
+            }
+
             // ---------------------------------------------------------- workspace list
             Glass {
                 id: wsPanel
@@ -412,6 +424,7 @@ ShellRoot {
         function shot(path: string): void { root.grabToImage(r => r.saveToFile(path)) }
         function state(): string { const out = []; for (let i = 0; i < rowModel.count; i++) out.push(rowModel.get(i).rowData); return JSON.stringify({ ws: app.ws, rows: out }) }
         function add(text: string): void { app.send({ cmd: "row_insert", text: text }) }
+        function steps(i: int): void { if (i >= 0 && i < rowModel.count) app.openSteps(rowModel.get(i).rid) }
         function fresh(): void { app.send({ cmd: "ws_new", name: "Test" }) }
     }
 }

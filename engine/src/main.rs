@@ -6,8 +6,10 @@
 
 mod doc;
 mod eval;
+mod mtree;
 mod num;
 mod parse;
+mod steps;
 mod sym;
 
 use doc::{list_workspaces, new_id, Doc, Opts};
@@ -142,6 +144,11 @@ impl App {
                 let h = r.get("hidden").and_then(|v| v.as_bool()).unwrap_or(true);
                 self.doc.set_hidden(id.ok_or("row_hide needs an id")?, h);
                 self.doc_reply()
+            }
+            "steps" => {
+                let id = id.ok_or("steps needs an id")?;
+                let sol = self.doc.solution(id, self.opts())?;
+                json!({"type": "steps", "id": id, "sol": sol})
             }
             "undo" | "redo" => {
                 if cmd == "undo" {

@@ -57,7 +57,7 @@ pub const FUNCS: &[&str] = &[
     "exp", "sqrt", "cbrt", "abs", "floor", "ceil", "round", "sign", "sgn", "det", "tr", "trace", "rank", "inv", "rref",
     "transpose", "min", "max", "gcd", "lcm", "mod", "nCr", "nPr", "binom", "fact", "factorial", "mean", "median",
     "total", "sum", "length", "real", "imag", "conj", "arg", "re", "im", "frac", "eye", "ident", "root", "cross", "dot",
-    "norm", "deg", "rad", "expand", "factor", "solve", "eigenvalues", "eig",
+    "norm", "deg", "rad", "expand", "factor", "solve", "eigenvalues", "eig", "diff", "derivative", "integrate", "int", "lim", "limit", "tangent", "analyze", "investigate",
 ];
 /// Named constants and Greek letters (single variables).
 pub const NAMES: &[&str] = &[

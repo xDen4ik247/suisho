@@ -38,7 +38,7 @@ Item {
             font.family: theme.font; font.pixelSize: 11
         }
         Rectangle {
-            visible: row.r.kind === "graph" || row.r.kind === "func"
+            visible: row.r.kind === "graph" || row.r.kind === "func" || !!row.r.plots
             width: 14; height: 14; radius: 7
             anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 10
             color: row.r.hidden ? "transparent" : row.tint
@@ -111,7 +111,7 @@ Item {
                 elide: Text.ElideRight
             }
             Text {
-                visible: row.r.kind === "graph" || row.r.kind === "func"
+                visible: row.r.kind === "graph" || row.r.kind === "func" || !!row.r.plots
                 text: row.r.kind === "func" ? app.tr("function of ", "функция от ") + (row.r.params || []).join(", ")
                                             : app.tr("graph", "график")
                 color: theme.alpha(row.tint, 0.95)
@@ -139,8 +139,18 @@ Item {
                 Text { id: lmText; anchors.centerIn: parent; text: app.tr("show map", "показать"); color: theme.text; font.family: theme.font; font.pixelSize: 12; font.weight: Font.Medium }
                 MouseArea { id: lmMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: app.showLinmap(row.r.lm) }
             }
-            // value box
+            // value box (scaled down to fit when the answer is wider than the row)
+            Item {
+                id: valueWrap
+                readonly property real fit: Math.min(1, Math.max(0.35, (col.width - 120) / Math.max(1, valueBox.width)))
+                visible: valueBox.visible
+                width: valueBox.width * fit
+                height: valueBox.height * fit
+                anchors.verticalCenter: parent.verticalCenter
             Rectangle {
+                id: valueBox
+                scale: valueWrap.fit
+                transformOrigin: Item.TopLeft
                 visible: (row.r.kind === "expr" || row.r.kind === "def" || row.r.kind === "solve") && row.r.value !== undefined
                 width: valueRow.implicitWidth + 18
                 height: valueRow.implicitHeight + 8
@@ -182,6 +192,7 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                     }
                 }
+            }
             }
         }
 

@@ -9,7 +9,7 @@ by a Rust engine (`engine/`, `suisho-engine`) over JSON lines.
 
 Open it with **Mod+=** (or the calculator key) or `suisho`.
 
-## Now (M1–M5)
+## Now (M1–M6)
 - **Rows like Desmos**: every row is an expression, a definition (`a = 3`, `f(x) = x^2 + a`, in any order), a matrix
   or a graph (`y = sin x`, `x^2 + y^2 < 4`). Enter adds a row, ↑↓ move, Backspace on an empty row removes it.
 - **Exact arithmetic**: fractions stay fractions (`1/3 + 1/6 = 1/2`), big integers stay exact (`2^100`), with a decimal
@@ -37,6 +37,14 @@ Open it with **Mod+=** (or the calculator key) or `suisho`.
   the null space of A − λI for each eigenvalue (checked A·v = λv).
 - **Linear-map animator**: *show map* on any 2×2 matrix animates the grid from I to A (î, ĵ, the unit square whose
   area is det, dashed eigen-directions).
+- **Calculus with steps**: `diff(x^2 sin x)` names each rule (sum, constant multiple, product, quotient, power +
+  chain, exponentials, the derivative table, logarithmic differentiation); `integrate(x^2 e^x)` by linearity, the
+  table, linear substitution, f′/f → ln|f|, substitution and by parts; `integrate(sin x, 0, pi)` by Newton–Leibniz
+  (the area is shaded on the graph); `lim((x^2 - 1)/(x - 1), x, 1)`, `lim(sin(x)/x, x, 0)`, `lim(f, x, inf)` by
+  substitution, cancelling, L'Hôpital, leading terms. Every answer is checked numerically.
+- **Function investigation** `analyze(f)` (исследование функции): domain, parity, periodicity, intercepts, vertical
+  and slant asymptotes (dashed on the graph), monotonicity and extrema from f′, convexity and inflection points
+  from f″, with sign charts. `tangent(f, a)` draws the tangent line, `diff(f)` plots f′.
 - **Grapher** (Desmos-style): `y = f(x)`, `x = g(y)`, any implicit curve `F(x, y) = G(x, y)` (`x² + y² = 9`,
   `sin(xy) = cos y`), inequalities with shading (dashed edge for < >), polar `r = 2cos(3θ)`, parametric
   `(cos t, sin t)` (range from `{0 < t < 1}`), points, restrictions `{x > 0}`, piecewise. Asymptotes are not joined.
@@ -48,8 +56,7 @@ Open it with **Mod+=** (or the calculator key) or `suisho`.
 ## Coming next (the plan)
 M3 rest: GPU shaders for implicit plots, trace,
 export · M4 rest: rational equations with
-the domain, |x|, systems · M6 calculus (derivatives, integrals, limits, full function
-investigation) · M7 analytic geometry 2D/3D (conics to canonical form) · M8 stats, units, bases · M9 trainer ·
+the domain, |x|, systems · M7 analytic geometry 2D/3D (conics to canonical form) · M8 stats, units, bases · M9 trainer ·
 M10 structural editor.
 
 ## Build / install

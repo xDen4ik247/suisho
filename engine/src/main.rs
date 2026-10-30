@@ -5,6 +5,7 @@
 //! (~/.config/suisho/settings.json).
 
 mod algebra;
+mod calc;
 mod doc;
 mod eval;
 mod mtree;

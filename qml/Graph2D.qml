@@ -155,6 +155,19 @@ Item {
                     }
                 }
                 Shape {
+                    visible: !!modelData.dash
+                    preferredRendererType: Shape.CurveRenderer
+                    ShapePath {
+                        strokeColor: Qt.rgba(col.r, col.g, col.b, 0.7)
+                        strokeWidth: 1.6
+                        cosmeticStroke: true
+                        fillColor: "transparent"
+                        strokeStyle: ShapePath.DashLine
+                        dashPattern: [6, 5]
+                        PathSvg { path: modelData.dash || "" }
+                    }
+                }
+                Shape {
                     visible: !!modelData.path
                     preferredRendererType: Shape.CurveRenderer
                     ShapePath {

@@ -73,6 +73,7 @@ pub fn available(a: &Ast) -> bool {
     match a {
         Ast::Call(f, args) if args.len() == 1 && matches!(f.as_str(), "det" | "inv" | "rref" | "rank" | "sqrt" | "eig" | "eigenvalues") => true,
         Ast::Call(f, args) if f == "solve" && !args.is_empty() => true,
+        Ast::Call(f, args) if matches!(f.as_str(), "diff" | "derivative" | "integrate" | "int" | "lim" | "limit" | "analyze" | "investigate") && !args.is_empty() => true,
         Ast::Call(f, args) if f == "root" && args.len() == 2 => true,
         Ast::Pow(_, e) => matches!(&**e, Ast::Neg(x) if **x == Ast::Num("1".into())),
         Ast::Add(..) | Ast::Sub(..) => fraction_terms(a).is_some(),
@@ -92,6 +93,9 @@ fn rhs(a: &Ast) -> &Ast {
 pub fn solve(a: &Ast, env: &mut Env) -> Result<Solution, String> {
     if let Some((v, rel, p, z)) = crate::algebra::detect(a, env) {
         return Ok(crate::algebra::solve(a, &v, rel, &p, z));
+    }
+    if let Some(r) = crate::calc::solve_call(rhs(a), env.degrees) {
+        return r;
     }
     let a = rhs(a);
     let no = HashMap::new();

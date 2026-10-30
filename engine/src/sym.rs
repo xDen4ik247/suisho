@@ -71,28 +71,102 @@ impl E {
                 }
                 x.powf(y)
             }
-            E::Fn(f, a) => {
-                let x = a.first().map(E::to_f64).unwrap_or(f64::NAN);
-                match f.as_str() {
-                    "sin" => x.sin(),
-                    "cos" => x.cos(),
-                    "tan" => x.tan(),
-                    "ln" => x.ln(),
-                    "abs" => x.abs(),
-                    _ => f64::NAN,
-                }
-            }
+            E::Fn(f, a) => fn_f64(f, a.first().map(E::to_f64).unwrap_or(f64::NAN)),
         }
     }
 }
 
-fn add(v: Vec<E>) -> E {
+pub fn fn_f64(f: &str, x: f64) -> f64 {
+    match f {
+        "sin" => x.sin(),
+        "cos" => x.cos(),
+        "tan" => x.tan(),
+        "ln" => if x > 0.0 { x.ln() } else { f64::NAN },
+        "abs" => x.abs(),
+        "arcsin" => x.asin(),
+        "arccos" => x.acos(),
+        "arctan" => x.atan(),
+        "sinh" => x.sinh(),
+        "cosh" => x.cosh(),
+        _ => f64::NAN,
+    }
+}
+
+/// Value of e with the symbol `x` set to `v` (other symbols: NaN).
+pub fn eval_at(e: &E, x: &str, v: f64) -> f64 {
+    match e {
+        E::Sym(s) if s == x => v,
+        E::Sym(_) => f64::NAN,
+        E::Q(_) | E::Pi | E::Euler => e.to_f64(),
+        E::Add(t) => t.iter().map(|a| eval_at(a, x, v)).sum(),
+        E::Mul(t) => t.iter().map(|a| eval_at(a, x, v)).product(),
+        E::Pow(b, p) => {
+            let (bb, pp) = (eval_at(b, x, v), eval_at(p, x, v));
+            if bb < 0.0 {
+                if let E::Q(r) = &**p {
+                    if r.denom().is_odd() {
+                        let m = (-bb).powf(pp);
+                        return if r.numer().is_odd() { -m } else { m };
+                    }
+                }
+            }
+            bb.powf(pp)
+        }
+        E::Fn(f, a) => fn_f64(f, a.first().map(|z| eval_at(z, x, v)).unwrap_or(f64::NAN)),
+    }
+}
+
+/// e with the symbol x replaced by `by`, simplified.
+pub fn subst(e: &E, x: &str, by: &E) -> E {
+    fn go(e: &E, x: &str, by: &E) -> E {
+        match e {
+            E::Sym(s) if s == x => by.clone(),
+            E::Add(t) => E::Add(t.iter().map(|a| go(a, x, by)).collect()),
+            E::Mul(t) => E::Mul(t.iter().map(|a| go(a, x, by)).collect()),
+            E::Pow(b, p) => E::Pow(Box::new(go(b, x, by)), Box::new(go(p, x, by))),
+            E::Fn(f, a) => {
+                let args: Vec<E> = a.iter().map(|z| go(z, x, by)).collect();
+                // exact values where known: sin(0), ln(1), ln(e)…
+                if args.len() == 1 && !args[0].has_sym() {
+                    let a0 = simplify(&args[0]);
+                    match f.as_str() {
+                        "sin" | "cos" | "tan" => {
+                            if let Some(v) = trig_exact(f, &a0) {
+                                return v;
+                            }
+                        }
+                        "ln" if a0.is_one() => return q(0),
+                        "ln" if a0 == E::Euler => return q(1),
+                        "arctan" if a0.is_zero() => return q(0),
+                        "arcsin" if a0.is_zero() => return q(0),
+                        _ => {}
+                    }
+                    return E::Fn(f.clone(), vec![a0]);
+                }
+                E::Fn(f.clone(), args)
+            }
+            o => o.clone(),
+        }
+    }
+    simplify(&go(e, x, by))
+}
+
+pub fn depends(e: &E, x: &str) -> bool {
+    match e {
+        E::Sym(s) => s == x,
+        E::Add(t) | E::Mul(t) | E::Fn(_, t) => t.iter().any(|a| depends(a, x)),
+        E::Pow(b, p) => depends(b, x) || depends(p, x),
+        _ => false,
+    }
+}
+
+pub fn add(v: Vec<E>) -> E {
     simplify(&E::Add(v))
 }
-fn mul(v: Vec<E>) -> E {
+pub fn mul(v: Vec<E>) -> E {
     simplify(&E::Mul(v))
 }
-fn pow(a: E, b: E) -> E {
+pub fn pow(a: E, b: E) -> E {
     simplify(&E::Pow(Box::new(a), Box::new(b)))
 }
 
@@ -158,16 +232,31 @@ pub fn from_ast(a: &Ast, degrees: bool) -> Option<E> {
                     }
                     _ => E::Fn("abs".into(), vec![x]),
                 },
-                "sin" | "cos" | "tan" => {
+                "sin" | "cos" | "tan" | "cot" => {
                     let arg = if degrees { mul(vec![x, E::Pi, qr(1, 180)]) } else { x };
-                    trig_exact(f, &arg)?
+                    if f != "cot" {
+                        if let Some(v) = trig_exact(f, &arg) {
+                            return Some(v);
+                        }
+                    }
+                    if !arg.has_sym() {
+                        return None;
+                    }
+                    if f == "cot" {
+                        return Some(pow(E::Fn("tan".into(), vec![arg]), q(-1)));
+                    }
+                    E::Fn(f.clone(), vec![arg])
                 }
                 "ln" => match &x {
                     E::Q(r) if r.is_one() => q(0),
                     E::Euler => q(1),
                     E::Pow(b, e) if **b == E::Euler => (**e).clone(),
+                    _ if x.has_sym() => E::Fn("ln".into(), vec![x]),
                     _ => return None,
                 },
+                "exp" => pow(E::Euler, x),
+                "lg" | "log" if x.has_sym() => mul(vec![E::Fn("ln".into(), vec![x]), pow(E::Fn("ln".into(), vec![q(10)]), q(-1))]),
+                "arcsin" | "arccos" | "arctan" | "sinh" | "cosh" if x.has_sym() => E::Fn(f.clone(), vec![x]),
                 _ => return None,
             }
         }
@@ -182,7 +271,7 @@ pub fn from_ast(a: &Ast, degrees: bool) -> Option<E> {
 }
 
 /// sin/cos/tan at rational multiples of π with a known closed form.
-fn trig_exact(f: &str, arg: &E) -> Option<E> {
+pub fn trig_exact(f: &str, arg: &E) -> Option<E> {
     if arg.is_zero() {
         return Some(if f == "cos" { q(1) } else { q(0) });
     }
@@ -269,15 +358,17 @@ fn base_trig(t: &BigRational) -> Option<(E, E)> {
 // ------------------------------------------------------------------ canonical ordering
 
 fn rank(e: &E) -> u8 {
+    // the order students write products in: 2·π·√3·x²·eˣ·sin x·(…)
     match e {
         E::Q(_) => 0,
         E::Pi | E::Euler => 1,
+        E::Pow(b, x) if (b.is_q().is_some() || matches!(**b, E::Pi | E::Euler)) && x.has_sym() => 6, // eˣ, 2ˣ
         E::Pow(b, _) if b.is_q().is_some() => 2, // radicals after constants
         E::Sym(_) => 3,
         E::Pow(..) => 4,
         E::Mul(_) => 5,
-        E::Fn(..) => 6,
-        E::Add(_) => 7,
+        E::Fn(..) => 7,
+        E::Add(_) => 8,
     }
 }
 

@@ -257,3 +257,19 @@ mod tests {
         assert_eq!(d.real_roots().len(), 1);
     }
 }
+
+/// The polynomial in `x` that a symbolic expression is (rational coefficients only).
+pub fn from_ast_e(e: &crate::sym::E, x: &str) -> Option<Poly> {
+    use crate::sym::E;
+    Some(match e {
+        E::Q(r) => Poly::constant(r.clone()),
+        E::Sym(s) if s == x => Poly::x(),
+        E::Add(v) => v.iter().map(|z| from_ast_e(z, x)).collect::<Option<Vec<_>>>()?.iter().fold(Poly::zero(), |a, b| a.add(b)),
+        E::Mul(v) => v.iter().map(|z| from_ast_e(z, x)).collect::<Option<Vec<_>>>()?.iter().fold(Poly::constant(q(1)), |a, b| a.mul(b)),
+        E::Pow(b, p) => {
+            let n = p.is_q().filter(|r| r.is_integer() && !r.is_negative())?.to_integer().to_u32().filter(|n| *n <= 64)?;
+            from_ast_e(b, x)?.pow(n)
+        }
+        _ => return None,
+    })
+}

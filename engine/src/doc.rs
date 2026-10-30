@@ -240,19 +240,26 @@ impl Doc {
                     return out;
                 }
                 if let Ast::Call(f, args) = ast {
-                    if matches!(f.as_str(), "solve" | "eig" | "eigenvalues") && !args.is_empty() {
+                    if matches!(f.as_str(), "solve" | "eig" | "eigenvalues" | "diff" | "derivative" | "integrate" | "int" | "lim" | "limit" | "analyze" | "investigate") && !args.is_empty() {
                         match crate::steps::solve(ast, &mut env) {
                             Ok(sol) => {
                                 out["kind"] = json!("solve");
                                 out["value"] = json!(crate::mtree::flat(&sol.answer));
                                 out["m"] = sol.answer;
                                 out["steps"] = json!(true);
+                                if matches!(f.as_str(), "diff" | "derivative" | "integrate" | "int" | "analyze" | "investigate") {
+                                    out["plots"] = json!(true);
+                                }
                             }
                             Err(e) => {
                                 out["kind"] = json!("error");
                                 out["error"] = json!(e);
                             }
                         }
+                        return out;
+                    }
+                    if f == "tangent" && args.len() == 2 {
+                        out["kind"] = json!("graph");
                         return out;
                     }
                     if (f == "expand" || f == "factor") && args.len() == 1 {

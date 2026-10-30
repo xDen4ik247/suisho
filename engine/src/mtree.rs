@@ -177,6 +177,7 @@ pub fn sym(e: &E) -> Value {
             }
         }
         E::Pow(b, x) => pow_tree(b, x),
+        E::Fn(f, a) if a.is_empty() => t(f), // ∞, +∞, −∞ from limits
         E::Fn(f, a) => {
             let inner: Vec<Value> = a.iter().map(sym).collect();
             if f == "abs" && inner.len() == 1 {
@@ -319,6 +320,11 @@ pub fn ast(a: &Ast) -> Value {
                 sqrt(ast(&args[0]), Some(&i))
             }
             ("abs", 1) => bars(ast(&args[0])),
+            ("integrate" | "int", 1) => row(vec![t("∫"), ast(&args[0]), t(" d"), var("x")]),
+            ("integrate" | "int", 3) => row(vec![json!({"k": "sub", "b": sup(t("∫"), ast(&args[2])), "e": ast(&args[1])}), ast(&args[0]), t(" d"), var("x")]),
+            ("diff" | "derivative", 1) => sup(par(ast(&args[0])), t("′")),
+            ("lim" | "limit", 3) => row(vec![sub(t("lim"), row(vec![ast(&args[1]), t("→"), ast(&args[2])])), t(" "), ast(&args[0])]),
+            ("lim" | "limit", 2) => row(vec![sub(t("lim"), row(vec![var("x"), t("→"), ast(&args[1])])), t(" "), ast(&args[0])]),
             ("det", 1) if matches!(args[0], Ast::Matrix(_)) => {
                 let mut m = ast(&args[0]);
                 m["o"] = json!("|");

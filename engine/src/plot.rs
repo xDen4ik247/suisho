@@ -31,6 +31,7 @@ pub enum F {
     Cmp(Rel, Box<F>, Box<F>),           // 1 or NaN
     Pw(Vec<(F, F)>, Option<Box<F>>),     // piecewise: (condition, value)
     Restrict(Box<F>, Vec<F>),
+    D(Box<F>), // d/dx (central difference)
 }
 
 impl F {
@@ -87,6 +88,10 @@ impl F {
                     f64::NAN
                 }
             }
+            F::D(e) => {
+                let h = 1e-5 * (1.0 + x.abs());
+                (e.ev(x + h, y, t) - e.ev(x - h, y, t)) / (2.0 * h)
+            }
         }
     }
     fn uses(&self, v: char) -> bool {
@@ -96,7 +101,7 @@ impl F {
             F::T => v == 't',
             F::C(_) => false,
             F::Add(a, b) | F::Sub(a, b) | F::Mul(a, b) | F::Div(a, b) | F::Pow(a, b) | F::Fn2(_, a, b) | F::Cmp(_, a, b) => a.uses(v) || b.uses(v),
-            F::Neg(a) | F::Fn(_, a) => a.uses(v),
+            F::Neg(a) | F::Fn(_, a) | F::D(a) => a.uses(v),
             F::Pw(c, o) => c.iter().any(|(a, b)| a.uses(v) || b.uses(v)) || o.as_ref().is_some_and(|o| o.uses(v)),
             F::Restrict(e, c) => e.uses(v) || c.iter().any(|x| x.uses(v)),
         }
@@ -334,6 +339,7 @@ enum Kind {
     Param(F, F, f64, f64),
     Implicit(F, Rel), // G(x,y) (rel) 0
     Points(Vec<(f64, f64)>),
+    Area(F, f64, f64), // ∫ₐᵇ f: the curve on [a, b] and the region down to the x-axis
 }
 
 fn kind_of(a: &Ast, env: &mut Env, degrees: bool) -> Result<Option<Kind>, String> {
@@ -416,6 +422,35 @@ fn kind_of(a: &Ast, env: &mut Env, degrees: bool) -> Result<Option<Kind>, String
                 }
             }
             Ok(Some(Kind::Points(pts)))
+        }
+        Ast::Call(f, args) if matches!(f.as_str(), "integrate" | "int") && args.len() == 3 => {
+            let mut cm = Compiler { env, degrees, param: "theta" };
+            let g = cm.compile(&args[0], &no)?;
+            let a = cm.compile(&args[1], &no)?.ev(0.0, 0.0, 0.0);
+            let b = cm.compile(&args[2], &no)?.ev(0.0, 0.0, 0.0);
+            if !(a.is_finite() && b.is_finite()) {
+                return Err("the bounds must be numbers".into());
+            }
+            Ok(Some(Kind::Area(g, a.min(b), a.max(b))))
+        }
+        Ast::Call(f, args) if matches!(f.as_str(), "diff" | "derivative") && !args.is_empty() => {
+            let mut cm = Compiler { env, degrees, param: "theta" };
+            Ok(Some(Kind::Explicit(F::D(Box::new(cm.compile(&args[0], &no)?)), Rel::Eq)))
+        }
+        Ast::Call(f, args) if matches!(f.as_str(), "analyze" | "investigate") && args.len() == 1 => {
+            let mut cm = Compiler { env, degrees, param: "theta" };
+            Ok(Some(Kind::Explicit(cm.compile(&args[0], &no)?, Rel::Eq)))
+        }
+        Ast::Call(f, args) if f == "tangent" && args.len() == 2 => {
+            let mut cm = Compiler { env, degrees, param: "theta" };
+            let g = cm.compile(&args[0], &no)?;
+            let a = cm.compile(&args[1], &no)?.ev(0.0, 0.0, 0.0);
+            let (fa, k) = (g.ev(a, 0.0, 0.0), F::D(Box::new(g)).ev(a, 0.0, 0.0));
+            if !(fa.is_finite() && k.is_finite()) {
+                return Err("no tangent there (the function or its derivative is undefined)".into());
+            }
+            // y = f(a) + f′(a)(x − a)
+            Ok(Some(Kind::Explicit(F::Add(Box::new(F::C(fa)), Box::new(F::Mul(Box::new(F::C(k)), Box::new(F::Sub(Box::new(F::X), Box::new(F::C(a))))))), Rel::Eq)))
         }
         Ast::Rel(..) => Ok(None),
         e => {
@@ -871,6 +906,27 @@ pub fn plot(rows: &[(u64, u32, Ast, bool)], env: &mut Env, degrees: bool, v: Vie
                 }
                 pois_fx(&fx, &raw, v.x0, v.x1, &mut pois, *id);
                 explicit_fs.push((*id, f));
+                // analyze(f): its asymptotes as dashed lines
+                if let Ast::Call(name, a) = ast {
+                    if matches!(name.as_str(), "analyze" | "investigate") {
+                        if let Some(e) = crate::sym::from_ast(&a[0], degrees) {
+                            let (vert, right, left) = crate::calc::asymptotes(&e, "x");
+                            let mut d = String::new();
+                            use std::fmt::Write;
+                            for xv in vert {
+                                let px = v.px(xv);
+                                let _ = write!(d, "M{:.1} {:.1}L{:.1} {:.1}", px, -2.0 * v.h, px, 3.0 * v.h);
+                            }
+                            for kb in [right, left].into_iter().flatten() {
+                                let (xa, xb) = (v.x0 - span, v.x1 + span);
+                                let _ = write!(d, "M{:.1} {:.1}L{:.1} {:.1}", v.px(xa), v.py(kb.0 * xa + kb.1), v.px(xb), v.py(kb.0 * xb + kb.1));
+                            }
+                            if !d.is_empty() {
+                                r["dash"] = json!(d);
+                            }
+                        }
+                    }
+                }
             }
             Kind::ExplicitY(g, rel) => {
                 let gy = |y: f64| g.ev(0.0, y, 0.0);
@@ -918,6 +974,27 @@ pub fn plot(rows: &[(u64, u32, Ast, bool)], env: &mut Env, degrees: bool, v: Vie
                     r["fill"] = json!(fill);
                     r["dashed"] = json!(matches!(rel, Rel::Lt | Rel::Gt));
                 }
+            }
+            Kind::Area(f, a, b) => {
+                let fx = |x: f64| f.ev(x, 0.0, 0.0);
+                let (lines, _) = sample_fx(&fx, &wide, a, b, false);
+                let lines: Vec<Vec<(f64, f64)>> = lines.into_iter().map(|l| l.into_iter().map(|(x, y)| (shift_x(x), shift_y(y))).collect()).collect();
+                let axis = v.py(0.0);
+                let mut s = String::new();
+                use std::fmt::Write;
+                for l in &lines {
+                    if l.len() < 2 {
+                        continue;
+                    }
+                    let _ = write!(s, "M{:.1} {:.1}", l[0].0, axis);
+                    for &(x, y) in l {
+                        let _ = write!(s, "L{:.1} {:.1}", x, y);
+                    }
+                    let _ = write!(s, "L{:.1} {:.1}Z", l[l.len() - 1].0, axis);
+                }
+                r["path"] = json!(lines_to_path_band(&lines, -1.5 * v.h, 2.5 * v.h));
+                r["fill"] = json!(s);
+                r["area"] = json!(crate::calc::simpson(&fx, a, b));
             }
             Kind::Points(pts) => {
                 r["points"] = json!(pts.iter().filter(|p| p.0.is_finite() && p.1.is_finite()).map(|p| json!([v.px(p.0), v.py(p.1), clean(p.0), clean(p.1)])).collect::<Vec<_>>());

@@ -121,6 +121,8 @@ ShellRoot {
                 graph.receive(m);
             } else if (m.type === "mesh") {
                 if (graph3dLoader.item) graph3dLoader.item.receive(m);
+            } else if (m.type === "tr_problem" || m.type === "tr_result" || m.type === "tr_stats") {
+                trainerPanel.receive(m);
             } else if (m.type === "steps") {
                 if (m.id === stepsFor) { stepsPanel.sol = m.sol; stepsPanel.open = true; }
             } else if (m.type === "ws_list") {
@@ -162,6 +164,7 @@ ShellRoot {
             const it = list.itemAtIndex(i);
             if (it) it.input.forceActiveFocus();
         }
+        function showSolution(sol) { stepsFor = null; stepsPanel.sol = sol; stepsPanel.open = true; }
         function showLinmap(m) { stepsPanel.open = false; graph.showLinmap(m); }
         function openSteps(id) { stepsFor = id; send({ cmd: "steps", id: id }); }
         property var stepsFor: null
@@ -225,6 +228,7 @@ ShellRoot {
             Shortcut { sequences: ["Ctrl+L"]; onActivated: app.setSetting("lang", app.ru ? "en" : "ru") }
             Shortcut { sequences: ["Ctrl+D"]; onActivated: app.setSetting("angle", app.settings.angle === "deg" ? "rad" : "deg") }
             Shortcut { sequences: ["Ctrl+Shift+Z"]; onActivated: app.send({ cmd: "redo" }) }
+            Shortcut { sequences: ["Ctrl+T"]; onActivated: trainerPanel.open = !trainerPanel.open }
             Shortcut { sequences: ["Escape"]; enabled: wsPanel.open || stepsPanel.open; onActivated: { if (wsPanel.open) wsPanel.open = false; else stepsPanel.open = false; } }
 
             // ---------------------------------------------------------- header
@@ -254,6 +258,7 @@ ShellRoot {
                         model: [
                             { label: app.settings.angle === "deg" ? "DEG" : "RAD", tip: "Ctrl+D", act: () => app.setSetting("angle", app.settings.angle === "deg" ? "rad" : "deg") },
                             { label: app.ru ? "RU" : "EN", tip: "Ctrl+L", act: () => app.setSetting("lang", app.ru ? "en" : "ru") },
+                            { label: app.tr("Trainer", "Тренажёр"), tip: "Ctrl+T", act: () => trainerPanel.open = !trainerPanel.open },
                             { label: app.tr("New", "Новый"), tip: "Ctrl+N", act: () => app.send({ cmd: "ws_new" }) }
                         ]
                         Rectangle {
@@ -352,6 +357,14 @@ ShellRoot {
                 }
             }
 
+            TrainerPanel {
+                id: trainerPanel
+                theme: shell.themeRef
+                app: shell.appRef
+                anchors.fill: graphPanel
+                z: 4
+            }
+
             StepsPanel {
                 id: stepsPanel
                 theme: shell.themeRef
@@ -445,6 +458,8 @@ ShellRoot {
         function fresh(): void { app.send({ cmd: "ws_new", name: "Test" }) }
         function view(cx: real, cy: real, ppu: real): void { graph.cx = cx; graph.cy = cy; graph.ppu = ppu }
         function show3d(on: bool): void { app.view3d = on }
+        function trainer(on: bool): void { trainerPanel.open = on }
+        function trAnswer(text: string): void { trainerPanel.answerText(text) }
         function linmap(i: int, t: real): void { const r = rowModel.get(i).rowData; if (r && r.lm) { graph.showLinmap(r.lm); graph.lt = t; graph.stopAnim(); } }
     }
 }

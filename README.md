@@ -9,7 +9,7 @@ by a Rust engine (`engine/`, `suisho-engine`) over JSON lines.
 
 Open it with **Mod+=** (or the calculator key) or `suisho`.
 
-## Now (M1–M8)
+## Now (M1–M9)
 - **Rows like Desmos**: every row is an expression, a definition (`a = 3`, `f(x) = x^2 + a`, in any order), a matrix
   or a graph (`y = sin x`, `x^2 + y^2 < 4`). Enter adds a row, ↑↓ move, Backspace on an empty row removes it.
 - **Exact arithmetic**: fractions stay fractions (`1/3 + 1/6 = 1/2`), big integers stay exact (`2^100`), with a decimal
@@ -62,6 +62,11 @@ Open it with **Mod+=** (or the calculator key) or `suisho`.
   imperial units, `G`, `gn`, `hbar`, `kB`, `NA`, `qe`, `me`…; `в` works too).
 - **Bases and bits**: `0b1011`, `0o17`, `0x1F` literals, `bin(n)`, `oct(n)`, `hex(n)`, `base(n, b)`, `bitand`, `bitor`,
   `bitxor`, `shl`, `shr`.
+- **Trainer** (Ctrl+T): endless practice in fractions, determinants, inverses, linear/quadratic/cubic equations,
+  2×2 systems, derivatives and integrals. Problems are generated backwards so the numbers come out nice; your answer
+  counts in any equivalent form (0.5 = 1/2, roots in any order, an antiderivative up to a constant); *Show solution*
+  opens the full steps; a rating per topic picks the level so you get about 75 % right
+  (`~/.local/share/suisho/trainer.json`).
 - **Grapher** (Desmos-style): `y = f(x)`, `x = g(y)`, any implicit curve `F(x, y) = G(x, y)` (`x² + y² = 9`,
   `sin(xy) = cos y`), inequalities with shading (dashed edge for < >), polar `r = 2cos(3θ)`, parametric
   `(cos t, sin t)` (range from `{0 < t < 1}`), points, restrictions `{x > 0}`, piecewise. Asymptotes are not joined.
@@ -73,7 +78,7 @@ Open it with **Mod+=** (or the calculator key) or `suisho`.
 ## Coming next (the plan)
 M3 rest: GPU shaders for implicit plots, trace,
 export · M4 rest: rational equations with
-the domain, |x|, systems · M7 analytic geometry 2D/3D (conics to canonical form) · M9 trainer ·
+the domain, |x|, systems · M7 analytic geometry 2D/3D (conics to canonical form) ·
 M10 structural editor.
 
 ## Build / install

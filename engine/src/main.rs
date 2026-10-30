@@ -16,6 +16,7 @@ mod plot;
 mod poly;
 mod steps;
 mod sym;
+mod trainer;
 mod units;
 
 use doc::{list_workspaces, new_id, Doc, Opts};
@@ -43,6 +44,7 @@ fn ws_dir() -> PathBuf {
 struct App {
     settings: Map<String, Value>,
     doc: Doc,
+    trainer: trainer::Trainer,
 }
 
 fn default_settings() -> Map<String, Value> {
@@ -67,7 +69,7 @@ impl App {
             .and_then(|t| serde_json::from_slice::<Value>(&t).ok())
             .and_then(|v| Doc::from_json(&v))
             .unwrap_or_else(|| Doc::new(new_id(), "Untitled".into()));
-        let mut app = App { settings, doc };
+        let mut app = App { settings, doc, trainer: trainer::Trainer::load(&data_dir()) };
         app.remember_ws();
         app
     }
@@ -170,6 +172,28 @@ impl App {
                 out["type"] = json!("mesh");
                 out
             }
+            "tr_next" => {
+                let topic = r.get("topic").and_then(|v| v.as_str()).filter(|t| !t.is_empty() && *t != "all");
+                let p = trainer::problem_json(self.trainer.next(topic));
+                json!({"type": "tr_problem", "problem": p, "stats": self.trainer.stats(), "streak": self.trainer.streak})
+            }
+            "tr_answer" => {
+                let pid = r.get("pid").and_then(|v| v.as_u64()).ok_or("tr_answer needs pid")?;
+                let text = r.get("text").and_then(|v| v.as_str()).unwrap_or("");
+                match self.trainer.answer(pid, text) {
+                    Ok((ok, rating)) => {
+                        let sol = self.trainer.current.as_ref().and_then(|p| {
+                            let ast = parse::parse(&p.source, &Default::default()).ok().flatten()?;
+                            let mut env = eval::Env::default();
+                            steps::solve(&ast, &mut env).ok().map(|s| s.json())
+                        });
+                        json!({"type": "tr_result", "pid": pid, "correct": ok, "rating": rating.round(), "solution": sol,
+                               "stats": self.trainer.stats(), "streak": self.trainer.streak})
+                    }
+                    Err(e) => json!({"type": "tr_result", "pid": pid, "invalid": e}),
+                }
+            }
+            "tr_stats" => json!({"type": "tr_stats", "stats": self.trainer.stats(), "streak": self.trainer.streak}),
             "steps" => {
                 let id = id.ok_or("steps needs an id")?;
                 let sol = self.doc.solution(id, self.opts())?;

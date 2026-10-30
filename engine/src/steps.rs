@@ -73,6 +73,7 @@ pub fn available(a: &Ast) -> bool {
     match a {
         Ast::Call(f, args) if args.len() == 1 && matches!(f.as_str(), "det" | "inv" | "rref" | "rank" | "sqrt" | "eig" | "eigenvalues") => true,
         Ast::Call(f, args) if f == "solve" && !args.is_empty() => true,
+        Ast::Call(f, args) if f == "linreg" && args.len() == 2 => true,
         Ast::Call(f, _) if matches!(f.as_str(), "line" | "distance" | "midpoint" | "triangle" | "plane" | "dot" | "cross" | "angle") => true,
         Ast::Call(f, args) if matches!(f.as_str(), "diff" | "derivative" | "integrate" | "int" | "lim" | "limit" | "analyze" | "investigate") && !args.is_empty() => true,
         Ast::Call(f, args) if f == "root" && args.len() == 2 => true,
@@ -97,6 +98,11 @@ pub fn solve(a: &Ast, env: &mut Env) -> Result<Solution, String> {
     }
     if let Some(r) = crate::calc::solve_call(rhs(a), env.degrees) {
         return r;
+    }
+    if let Ast::Call(f, _) = rhs(a) {
+        if f == "linreg" {
+            return linreg_solution(rhs(a), env);
+        }
     }
     if let Some(r) = crate::geom::construct(rhs(a), env) {
         return r;
@@ -1150,4 +1156,53 @@ pub fn eigen_solution(a: &Ast, m: &Mat) -> Result<Solution, String> {
         ans.push(t("no real eigenvalues"));
     }
     Ok(Solution { en: "Eigenvalues and eigenvectors".into(), ru: "Собственные значения и векторы".into(), problem: ast(a), steps, answer: row(ans), verified })
+}
+
+// ------------------------------------------------------------------ least-squares line
+
+pub fn linreg_solution(a: &Ast, env: &mut Env) -> Result<Solution, String> {
+    let Ast::Call(_, args) = a else { return Err("linreg(X, Y)".into()) };
+    if args.len() != 2 {
+        return Err("linreg(X, Y): two lists of the same length".into());
+    }
+    let no = HashMap::new();
+    let list = |env: &mut Env, x: &Ast| -> Result<Vec<Num>, String> {
+        match env.eval(x, &no) {
+            Ok(Val::List(l)) => l.into_iter().map(|v| if let Val::N(n) = v { Ok(n) } else { Err("numbers only".to_string()) }).collect(),
+            Ok(_) => Err("linreg(X, Y) takes two lists".into()),
+            Err(crate::eval::EvalErr::Free(n)) => Err(format!("{n} is not defined")),
+            Err(crate::eval::EvalErr::Msg(m)) => Err(m),
+        }
+    };
+    let (xs, ys) = (list(env, &args[0])?, list(env, &args[1])?);
+    let n = xs.len();
+    if n != ys.len() || n < 2 {
+        return Err("linreg(X, Y): two lists of the same length (at least 2 points)".into());
+    }
+    let sum = |v: &dyn Fn(usize) -> Num| -> Num { (0..n).fold(Num::zero(), |acc, i| acc.add(&v(i)).unwrap_or(Num::zero())) };
+    let sx = sum(&|i| xs[i].clone());
+    let sy = sum(&|i| ys[i].clone());
+    let sxx = sum(&|i| xs[i].mul(&xs[i]).unwrap_or(Num::zero()));
+    let sxy = sum(&|i| xs[i].mul(&ys[i]).unwrap_or(Num::zero()));
+    let nn = Num::int(n as i64);
+    let den = nn.mul(&sxx)?.sub(&sx.mul(&sx)?)?;
+    if den.is_zero() {
+        return Err("all x are equal: no line can be fitted".into());
+    }
+    let m = nn.mul(&sxy)?.sub(&sx.mul(&sy)?)?.div(&den)?;
+    let b = sy.sub(&m.mul(&sx)?)?.div(&nn)?;
+    let st = vec![
+        step("Sums over the data:", "Суммы по данным:").m(row(vec![t(&format!("n = {n},   ")), t("Σx = "), num(&sx), t(",   Σy = "), num(&sy), t(",   Σx² = "), num(&sxx), t(",   Σxy = "), num(&sxy)])),
+        step("Least squares: the slope m = (nΣxy − ΣxΣy)/(nΣx² − (Σx)²).", "Метод наименьших квадратов: m = (nΣxy − ΣxΣy)/(nΣx² − (Σx)²).")
+            .m(row(vec![var("m"), eq(), frac(row(vec![t(&n.to_string()), op("·"), num_p(&sxy), op("−"), num_p(&sx), op("·"), num_p(&sy)]),
+                                             row(vec![t(&n.to_string()), op("·"), num_p(&sxx), op("−"), sup(par(num(&sx)), t("2"))])), eq(), num(&m)])),
+        step("The intercept b = (Σy − mΣx)/n: the line passes through the mean point (x̄, ȳ).", "Свободный член b = (Σy − mΣx)/n: прямая проходит через среднюю точку (x̄, ȳ).")
+            .m(row(vec![var("b"), eq(), num(&b)])),
+    ];
+    let mut av = vec![var("y"), eq(), num(&m), var("x")];
+    if !b.is_zero() {
+        av.extend([op(if b.sign() < 0 { "−" } else { "+" }), num(&b.abs())]);
+    }
+    let ans = row(av);
+    Ok(Solution { en: "Linear regression".into(), ru: "Линейная регрессия".into(), problem: ast(a), steps: st, answer: ans, verified: true })
 }

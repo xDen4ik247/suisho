@@ -596,6 +596,108 @@ fn builtin(f: &str, v: &[Val], deg: bool) -> R {
             let m = ns.len() / 2;
             Ok(Val::N(if ns.len() % 2 == 1 { ns[m].clone() } else { ns[m - 1].add(&ns[m])?.div(&Num::int(2))? }))
         }
+        "stdev" | "stdevp" | "var" | "varp" => {
+            let ns = nums(v);
+            let n = ns.len();
+            let sample = f == "stdev" || f == "var";
+            if n < if sample { 2 } else { 1 } {
+                return Err("needs more numbers".into());
+            }
+            let mut m = Num::zero();
+            for x in &ns {
+                m = m.add(x)?;
+            }
+            m = m.div(&Num::int(n as i64))?;
+            let mut ss = Num::zero();
+            for x in &ns {
+                let d = x.sub(&m)?;
+                ss = ss.add(&d.mul(&d)?)?;
+            }
+            let var = ss.div(&Num::int(if sample { n as i64 - 1 } else { n as i64 }))?;
+            Ok(Val::N(if f.starts_with("var") { var } else { var.pow(&Num::ratio(1, 2))? }))
+        }
+        "sort" => {
+            let mut ns = nums(v);
+            ns.sort_by(|a, b| a.to_f64().total_cmp(&b.to_f64()));
+            Ok(Val::List(ns.into_iter().map(Val::N).collect()))
+        }
+        "count" => Ok(Val::N(Num::int(nums(v).len() as i64))),
+        "corr" if v.len() == 2 => {
+            let (xs, ys) = (nums(&v[..1]), nums(&v[1..]));
+            if xs.len() != ys.len() || xs.len() < 2 {
+                return Err("corr(X, Y): two lists of the same length".into());
+            }
+            let n = xs.len() as f64;
+            let (mx, my) = (xs.iter().map(Num::to_f64).sum::<f64>() / n, ys.iter().map(Num::to_f64).sum::<f64>() / n);
+            let (mut sxy, mut sxx, mut syy) = (0.0, 0.0, 0.0);
+            for (a, b) in xs.iter().zip(&ys) {
+                let (dx, dy) = (a.to_f64() - mx, b.to_f64() - my);
+                sxy += dx * dy;
+                sxx += dx * dx;
+                syy += dy * dy;
+            }
+            Ok(Val::N(Num::R(sxy / (sxx * syy).sqrt())))
+        }
+        "normalpdf" => {
+            let a: Vec<f64> = nums(v).iter().map(Num::to_f64).collect();
+            let (x, mu, sd) = (a.first().copied().ok_or("normalpdf(x, μ, σ)")?, a.get(1).copied().unwrap_or(0.0), a.get(2).copied().unwrap_or(1.0));
+            Ok(Val::N(Num::R((-0.5 * ((x - mu) / sd).powi(2)).exp() / (sd * (2.0 * std::f64::consts::PI).sqrt()))))
+        }
+        "normalcdf" => {
+            let a: Vec<f64> = nums(v).iter().map(Num::to_f64).collect();
+            if a.len() < 2 {
+                return Err("normalcdf(a, b, μ, σ)".into());
+            }
+            let (lo, hi, mu, sd) = (a[0], a[1], a.get(2).copied().unwrap_or(0.0), a.get(3).copied().unwrap_or(1.0));
+            let phi = |z: f64| 0.5 * (1.0 + erf(z / std::f64::consts::SQRT_2));
+            Ok(Val::N(Num::R(phi((hi - mu) / sd) - phi((lo - mu) / sd))))
+        }
+        "binompdf" | "binomcdf" => {
+            // binompdf(n, p, k): exact when p is exact
+            let a = nums(v);
+            if a.len() != 3 {
+                return Err(format!("{f}(n, p, k)").into());
+            }
+            let n = a[0].as_i64().filter(|n| (0..=2000).contains(n)).ok_or("n: a whole number")?;
+            let k = a[2].as_i64().ok_or("k: a whole number")?;
+            let p = a[1].clone();
+            let q = Num::one().sub(&p)?;
+            let term = |i: i64| -> Result<Num, String> {
+                let mut c = BigInt::from(1);
+                for j in 0..i {
+                    c = c * (n - j) / (j + 1);
+                }
+                Num::Q(BigRational::from_integer(c)).mul(&p.pow(&Num::int(i))?)?.mul(&q.pow(&Num::int(n - i))?)
+            };
+            if f == "binompdf" {
+                return Ok(Val::N(if (0..=n).contains(&k) { term(k)? } else { Num::zero() }));
+            }
+            let mut acc = Num::zero();
+            for i in 0..=k.min(n) {
+                acc = acc.add(&term(i)?)?;
+            }
+            Ok(Val::N(acc))
+        }
+        "poissonpdf" | "poissoncdf" => {
+            let a: Vec<f64> = nums(v).iter().map(Num::to_f64).collect();
+            if a.len() != 2 {
+                return Err(format!("{f}(λ, k)").into());
+            }
+            let (l, k) = (a[0], a[1].floor() as i64);
+            let pdf = |i: i64| (-l + i as f64 * l.ln() - (1..=i).map(|j| (j as f64).ln()).sum::<f64>()).exp();
+            Ok(Val::N(Num::R(if f == "poissonpdf" { pdf(k) } else { (0..=k).map(pdf).sum() })))
+        }
+        "bitand" | "bitor" | "bitxor" | "shl" | "shr" if v.len() == 2 => {
+            let (a, b) = (int_arg(&v[0], f)?, int_arg(&v[1], f)?);
+            let r = match f {
+                "bitand" => a & b,
+                "bitor" => a | b,
+                "bitxor" => a ^ b,
+                "shl" => a << b.to_usize().filter(|s| *s < 4096).ok_or("shift too large")?,
+                _ => a >> b.to_usize().filter(|s| *s < 4096).ok_or("shift too large")?,
+            };
+            Ok(Val::N(Num::Q(BigRational::from_integer(r))))
+        }
         "length" => match one(f)? {
             Val::List(l) => Ok(Val::N(Num::int(l.len() as i64))),
             _ => Err("length needs a list".into()),
@@ -624,6 +726,15 @@ fn builtin(f: &str, v: &[Val], deg: bool) -> R {
         "rad" => real(&f64::to_radians),
         _ => Err(format!("{f}: unknown function or wrong arguments").into()),
     }
+}
+
+fn erf(x: f64) -> f64 {
+    // Abramowitz–Stegun 7.1.26 refined with a few Newton steps on the series is overkill here; use a high-precision
+    // continued expansion (|error| < 1.2e-7) — enough for probabilities shown to 7 digits.
+    let t = 1.0 / (1.0 + 0.5 * x.abs());
+    let y = 1.0 - t * (-x * x - 1.26551223 + t * (1.00002368 + t * (0.37409196 + t * (0.09678418 + t * (-0.18628806
+        + t * (0.27886807 + t * (-1.13520398 + t * (1.48851587 + t * (-0.82215223 + t * 0.17087277))))))))).exp();
+    if x >= 0.0 { y } else { -y }
 }
 
 /// Plain text of a value.

@@ -57,7 +57,7 @@ pub const FUNCS: &[&str] = &[
     "exp", "sqrt", "cbrt", "abs", "floor", "ceil", "round", "sign", "sgn", "det", "tr", "trace", "rank", "inv", "rref",
     "transpose", "min", "max", "gcd", "lcm", "mod", "nCr", "nPr", "binom", "fact", "factorial", "mean", "median",
     "total", "sum", "length", "real", "imag", "conj", "arg", "re", "im", "frac", "eye", "ident", "root", "cross", "dot",
-    "norm", "deg", "rad", "expand", "factor", "solve", "eigenvalues", "eig", "diff", "derivative", "integrate", "int", "lim", "limit", "tangent", "analyze", "investigate", "line", "distance", "midpoint", "triangle", "plane", "angle",
+    "norm", "deg", "rad", "expand", "factor", "solve", "eigenvalues", "eig", "diff", "derivative", "integrate", "int", "lim", "limit", "tangent", "analyze", "investigate", "line", "distance", "midpoint", "triangle", "plane", "angle", "stdev", "stdevp", "var", "varp", "sort", "count", "corr", "linreg", "normalpdf", "normalcdf", "binompdf", "binomcdf", "poissonpdf", "poissoncdf", "bitand", "bitor", "bitxor", "shl", "shr", "bin", "hex", "oct", "base",
 ];
 /// Named constants and Greek letters (single variables).
 pub const NAMES: &[&str] = &[
@@ -199,6 +199,20 @@ fn lex(src: &str) -> Result<Vec<Tok>, String> {
         let c = cs[i];
         if c.is_whitespace() {
             i += 1;
+            continue;
+        }
+        if c == '0' && matches!(cs.get(i + 1), Some('b' | 'o' | 'x')) && cs.get(i + 2).is_some_and(|d| d.is_ascii_hexdigit()) {
+            // 0b1011, 0o17, 0x1F → a decimal integer
+            let radix = match cs[i + 1] { 'b' => 2, 'o' => 8, _ => 16 };
+            let st = i + 2;
+            let mut j = st;
+            while j < cs.len() && cs[j].is_digit(radix) {
+                j += 1;
+            }
+            let digits: String = cs[st..j].iter().collect();
+            let v = num_bigint::BigInt::parse_bytes(digits.as_bytes(), radix).ok_or("bad number")?;
+            out.push(Tok::Num(v.to_string()));
+            i = j;
             continue;
         }
         if c.is_ascii_digit() || (c == '.' && cs.get(i + 1).is_some_and(|d| d.is_ascii_digit())) {

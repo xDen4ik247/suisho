@@ -225,6 +225,21 @@ impl Doc {
             .enumerate()
             .map(|(i, (r, p))| {
                 let mut out = json!({"id": r.id, "text": r.text, "color": r.color, "hidden": r.hidden});
+                // unit conversion rows: "36 km/h to m/s"
+                if let Some(res) = crate::units::convert(&r.text) {
+                    match res {
+                        Ok((v, _, to)) => {
+                            out["kind"] = json!("expr");
+                            out["value"] = json!(format!("{} {}", crate::num::fmt_float(v, o.digits), to));
+                            out["m"] = crate::mtree::row(vec![crate::mtree::t(&crate::num::fmt_float(v, o.digits).replace('-', "−")), crate::mtree::t(&format!(" {to}"))]);
+                        }
+                        Err(e) => {
+                            out["kind"] = json!("error");
+                            out["error"] = json!(e);
+                        }
+                    }
+                    return out;
+                }
                 let ast = match p {
                     Err(e) => {
                         out["kind"] = json!("error");
@@ -261,6 +276,47 @@ impl Doc {
                                 if matches!(f.as_str(), "diff" | "derivative" | "integrate" | "int" | "analyze" | "investigate" | "line" | "triangle" | "midpoint") {
                                     out["plots"] = json!(true);
                                 }
+                            }
+                            Err(e) => {
+                                out["kind"] = json!("error");
+                                out["error"] = json!(e);
+                            }
+                        }
+                        return out;
+                    }
+                    if matches!(f.as_str(), "bin" | "hex" | "oct" | "base") && !args.is_empty() {
+                        let radix = match f.as_str() { "bin" => Some(2), "oct" => Some(8), "hex" => Some(16), _ => None };
+                        let n = env.eval(&args[0], &HashMap::new());
+                        let b = match (radix, args.get(1)) {
+                            (Some(r), _) => Ok(r),
+                            (None, Some(x)) => match env.eval(x, &HashMap::new()) {
+                                Ok(Val::N(k)) => k.as_i64().filter(|k| (2..=36).contains(k)).map(|k| k as u32).ok_or("the base is 2…36"),
+                                _ => Err("the base is 2…36"),
+                            },
+                            _ => Err("base(n, b)"),
+                        };
+                        match (n, b) {
+                            (Ok(Val::N(crate::num::Num::Q(q))), Ok(b)) if q.is_integer() => {
+                                let s = q.to_integer().to_str_radix(b).to_uppercase();
+                                out["kind"] = json!("expr");
+                                out["value"] = json!(s);
+                                out["m"] = crate::mtree::sub(crate::mtree::t(&s), crate::mtree::t(&b.to_string()));
+                            }
+                            _ => {
+                                out["kind"] = json!("error");
+                                out["error"] = json!(format!("{f}: a whole number (and a base 2…36)"));
+                            }
+                        }
+                        return out;
+                    }
+                    if f == "linreg" && args.len() == 2 {
+                        match crate::steps::linreg_solution(ast, &mut env) {
+                            Ok(sol) => {
+                                out["kind"] = json!("solve");
+                                out["value"] = json!(crate::mtree::flat(&sol.answer));
+                                out["m"] = sol.answer;
+                                out["steps"] = json!(true);
+                                out["plots"] = json!(true);
                             }
                             Err(e) => {
                                 out["kind"] = json!("error");
@@ -527,6 +583,19 @@ mod tests {
         assert_eq!(r[5]["kind"], "graph");
         assert_eq!(r[6]["free"][0], "c");
         assert_eq!(r[7]["value"], "1267650600228229401496703205376");
+    }
+
+    #[test]
+    fn stats_units_bases() {
+        let r = run(&["stdevp([2,4,4,4,5,5,7,9])", "binompdf(10, 1/2, 5)", "0b1011 + 0x1F", "bin(10)", "linreg([1,2,3],[2,4,6])", "36 km/h to m/s", "bitxor(12, 10)", "hex(255)"]);
+        assert_eq!(r[0]["value"], "2");
+        assert_eq!(r[1]["value"], "63/256");
+        assert_eq!(r[2]["value"], "42");
+        assert_eq!(r[3]["value"], "1010");
+        assert_eq!(r[4]["value"], "y=2x");
+        assert_eq!(r[5]["value"], "10 m/s");
+        assert_eq!(r[6]["value"], "6");
+        assert_eq!(r[7]["value"], "FF");
     }
 
     #[test]

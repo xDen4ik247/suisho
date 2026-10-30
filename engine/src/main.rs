@@ -16,6 +16,7 @@ mod plot;
 mod poly;
 mod steps;
 mod sym;
+mod units;
 
 use doc::{list_workspaces, new_id, Doc, Opts};
 use serde_json::{json, Map, Value};

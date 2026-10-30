@@ -342,6 +342,7 @@ enum Kind {
     Points(Vec<(f64, f64)>),
     Area(F, f64, f64), // ∫ₐᵇ f: the curve on [a, b] and the region down to the x-axis
     Poly(Vec<(f64, f64)>, bool), // a polyline through points (closed: a polygon)
+    Fit(F, Vec<(f64, f64)>),     // data points and the fitted curve
 }
 
 fn kind_of(a: &Ast, env: &mut Env, degrees: bool) -> Result<Option<Kind>, String> {
@@ -464,6 +465,20 @@ fn kind_of(a: &Ast, env: &mut Env, degrees: bool) -> Result<Option<Kind>, String
                 return Ok(Some(Kind::Points(vec![m])));
             }
             Ok(Some(Kind::Poly(pts, true)))
+        }
+        Ast::Call(f, args) if f == "linreg" && args.len() == 2 => {
+            let no2 = HashMap::new();
+            let (Ok(Val::List(xs)), Ok(Val::List(ys))) = (env.eval(&args[0], &no2), env.eval(&args[1], &no2)) else { return Ok(None) };
+            let pts: Vec<(f64, f64)> = xs.iter().zip(&ys).filter_map(|(a, b)| match (a, b) { (Val::N(a), Val::N(b)) => Some((a.to_f64(), b.to_f64())), _ => None }).collect();
+            let n = pts.len() as f64;
+            if n < 2.0 {
+                return Ok(None);
+            }
+            let (sx, sy) = (pts.iter().map(|p| p.0).sum::<f64>(), pts.iter().map(|p| p.1).sum::<f64>());
+            let (sxx, sxy) = (pts.iter().map(|p| p.0 * p.0).sum::<f64>(), pts.iter().map(|p| p.0 * p.1).sum::<f64>());
+            let m = (n * sxy - sx * sy) / (n * sxx - sx * sx);
+            let b = (sy - m * sx) / n;
+            Ok(Some(Kind::Fit(F::Add(Box::new(F::Mul(Box::new(F::C(m)), Box::new(F::X))), Box::new(F::C(b))), pts)))
         }
         Ast::Call(f, args) if matches!(f.as_str(), "analyze" | "investigate") && args.len() == 1 => {
             let mut cm = Compiler { env, degrees, param: "theta" };
@@ -1050,6 +1065,13 @@ pub fn plot(rows: &[(u64, u32, Ast, bool)], env: &mut Env, degrees: bool, v: Vie
                 r["path"] = json!(lines_to_path_band(&lines, -1.5 * v.h, 2.5 * v.h));
                 r["fill"] = json!(s);
                 r["area"] = json!(crate::calc::simpson(&fx, a, b));
+            }
+            Kind::Fit(f, pts) => {
+                let fx = |x: f64| f.ev(x, 0.0, 0.0);
+                let (lines, _) = sample_fx(&fx, &wide, xa, xb, false);
+                let lines: Vec<Vec<(f64, f64)>> = lines.into_iter().map(|l| l.into_iter().map(|(x, y)| (shift_x(x), shift_y(y))).collect()).collect();
+                r["path"] = json!(lines_to_path_band(&lines, -1.5 * v.h, 2.5 * v.h));
+                r["points"] = json!(pts.iter().map(|p| json!([v.px(p.0), v.py(p.1), clean(p.0), clean(p.1)])).collect::<Vec<_>>());
             }
             Kind::Poly(pts, closed) => {
                 use std::fmt::Write;
